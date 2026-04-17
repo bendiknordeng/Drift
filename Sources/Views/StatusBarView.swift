@@ -13,6 +13,11 @@ struct StatusBarView: View {
                 Text(state.isConnected ? (state.activeConnection?.displayName ?? "Connected") : "Disconnected")
                     .font(Theme.monoSmall)
                     .foregroundColor(Theme.textSecondary)
+                if state.isRefreshing {
+                    ProgressView()
+                        .scaleEffect(0.45)
+                        .tint(Theme.accent)
+                }
             }
 
             if let ref = state.selectedTable {

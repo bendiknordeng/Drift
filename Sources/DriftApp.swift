@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 @main
 struct DriftApp: App {
@@ -15,11 +16,33 @@ struct DriftApp: App {
             }
             .frame(minWidth: 900, minHeight: 600)
             .background(Theme.bg)
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(appState.appearance.colorScheme)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 800)
         .commands {
+            CommandGroup(replacing: .appVisibility) {
+                Button("Go Home") {
+                    Task { await appState.goHome() }
+                }
+                .keyboardShortcut("h", modifiers: .command)
+
+                Divider()
+
+                Button("Hide Drift") {
+                    NSApp.hide(nil)
+                }
+
+                Button("Hide Others") {
+                    NSApp.hideOtherApplications(nil)
+                }
+                .keyboardShortcut("h", modifiers: [.command, .option])
+
+                Button("Show All") {
+                    NSApp.unhideAllApplications(nil)
+                }
+            }
+
             CommandGroup(replacing: .newItem) {
                 Button("New Connection...") {
                     appState.showConnectionSheet = true
@@ -62,6 +85,11 @@ struct DriftApp: App {
                     }
                 }
                 .keyboardShortcut(.return, modifiers: .command)
+
+                Button("Refresh") {
+                    Task { await appState.refreshCurrentContext() }
+                }
+                .keyboardShortcut("r", modifiers: .command)
 
                 Divider()
 

@@ -91,6 +91,11 @@ struct CommandPalette: View {
             state.showCommandPalette = false
             return .handled
         }
+        .onKeyPress(.escape, phases: .down) { press in
+            guard press.modifiers.contains(.command), state.isConnected else { return .ignored }
+            Task { await state.goHome() }
+            return .handled
+        }
     }
 
     private func resultRow(item: (schema: String, table: String), index: Int) -> some View {

@@ -5,6 +5,7 @@ struct SidebarView: View {
     @State private var searchText = ""
     @State private var expandedSchemas: Set<String> = ["public"]
     @State private var selectedIndex = -1
+    @FocusState private var searchFocused: Bool
 
     private var allFilteredTables: [(schema: String, table: String)] {
         filteredSchemas.flatMap { schema in
@@ -23,6 +24,7 @@ struct SidebarView: View {
                     .textFieldStyle(.plain)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(Theme.text)
+                    .focused($searchFocused)
                     .onKeyPress(.downArrow) {
                         let tables = allFilteredTables
                         if !tables.isEmpty {
@@ -64,6 +66,14 @@ struct SidebarView: View {
                 alignment: .bottom
             )
             .onChange(of: searchText) { _, _ in selectedIndex = -1 }
+            .onChange(of: state.selectedTable) { _, newValue in
+                if newValue == nil {
+                    searchFocused = true
+                }
+            }
+            .onChange(of: state.sidebarNavigationRequestID) { _, _ in
+                handleExternalNavigation(direction: state.sidebarNavigationDirection)
+            }
 
             // Schema tree
             ScrollViewReader { proxy in
@@ -121,6 +131,11 @@ struct SidebarView: View {
             .background(Theme.surface)
         }
         .background(Theme.bg)
+        .onAppear {
+            if state.selectedTable == nil {
+                searchFocused = true
+            }
+        }
     }
 
     private static let hiddenSchemas: Set<String> = [
@@ -208,6 +223,23 @@ struct SidebarView: View {
                 Task { await state.selectTable(ref, pinTab: true) }
             }
         )
+    }
+
+    private func handleExternalNavigation(direction: Int) {
+        guard direction != 0 else { return }
+        let tables = allFilteredTables
+        guard !tables.isEmpty else {
+            searchFocused = true
+            selectedIndex = -1
+            return
+        }
+
+        searchFocused = true
+        if direction > 0 {
+            selectedIndex = min(selectedIndex + 1, tables.count - 1)
+        } else {
+            selectedIndex = max(-1, selectedIndex - 1)
+        }
     }
 }
 

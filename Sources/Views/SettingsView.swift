@@ -8,7 +8,7 @@ struct SettingsView: View {
     @State private var selectedTab = 0
     @FocusState private var viewFocused: Bool
 
-    private let tabs = ["Integrations", "Shortcuts", "About"]
+    private let tabs = ["Appearance", "Integrations", "Shortcuts", "About"]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,8 +56,9 @@ struct SettingsView: View {
             // Content
             Group {
                 switch selectedTab {
-                case 0: integrationsTab
-                case 1: shortcutsTab
+                case 0: appearanceTab
+                case 1: integrationsTab
+                case 2: shortcutsTab
                 default: aboutTab
                 }
             }
@@ -78,6 +79,11 @@ struct SettingsView: View {
             state.showSettings = false
             return .handled
         }
+        .onKeyPress(.escape, phases: .down) { press in
+            guard press.modifiers.contains(.command), state.isConnected else { return .ignored }
+            Task { await state.goHome() }
+            return .handled
+        }
         .onKeyPress(.tab) {
             selectedTab = (selectedTab + 1) % tabs.count
             return .handled
@@ -88,6 +94,42 @@ struct SettingsView: View {
             neonKey = state.store.neonAPIKey
             llmModel = state.llm.model
         }
+    }
+
+    // MARK: - Appearance
+
+    private var appearanceTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 6) {
+                    Image(systemName: "circle.lefthalf.filled")
+                        .font(.caption)
+                        .foregroundColor(Theme.accent)
+                    Text("Appearance")
+                        .font(.system(.caption, weight: .semibold))
+                        .foregroundColor(Theme.text)
+                }
+
+                Picker("Theme", selection: $state.appearance) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text("Drift starts in dark mode by default. Your selection is saved and applied across the app immediately.")
+                    .font(.system(.caption))
+                    .foregroundColor(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .background(Theme.surface)
+            .cornerRadius(8)
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+
+            Spacer()
+        }
+        .padding(20)
     }
 
     // MARK: - Integrations
@@ -225,12 +267,15 @@ struct SettingsView: View {
 
     private var shortcuts: [(label: String, shortcut: String)] {
         [
+            ("Go Home", "⌘H"),
+            ("Open Home Connection", "⌘1-9"),
             ("Quick Open", "⌘P"),
             ("Search Values", "⌘⇧F"),
             ("AI Query", "⌘K"),
             ("SQL Editor", "⌘⇧E"),
             ("Table Browser", "⌘⇧B"),
             ("Execute SQL", "⌘⏎"),
+            ("Refresh", "⌘R"),
             ("New Connection", "⌘N"),
             ("Navigate Back", "⌘←"),
             ("Navigate Forward", "⌘→"),

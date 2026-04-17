@@ -50,7 +50,10 @@ struct DataGridView: View {
                 columnWidths: $columnWidths,
                 onSort: { col in Task { await state.toggleSort(column: col) } },
                 onLoadMore: { Task { await state.loadMoreRows() } },
-                truncated: data.truncated
+                truncated: data.truncated,
+                registerForBrowserKeyboardMonitor: true,
+                onCommandEscape: { Task { await state.goHome() } },
+                uiScale: state.fontScale
             )
 
             paginationBar(data)

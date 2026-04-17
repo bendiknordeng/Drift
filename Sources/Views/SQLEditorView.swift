@@ -2,7 +2,11 @@ import SwiftUI
 
 struct SQLEditorView: View {
     @EnvironmentObject var state: AppState
-    @FocusState private var editorFocused: Bool
+    @State private var selectedCells: Set<CellAddress> = []
+    @State private var anchorCell: CellAddress?
+    @State private var columnWidths: [String: CGFloat] = [:]
+    @State private var editorFocusRequestID = 0
+    @State private var resultsFocusRequestID = 0
 
     private var allColumnNames: [String] {
         var names = Set<String>()
@@ -29,7 +33,7 @@ struct SQLEditorView: View {
                 .frame(minHeight: 100)
         }
         .background(Theme.bg)
-        .onAppear { editorFocused = true }
+        .onAppear { editorFocusRequestID += 1 }
     }
 
     private var editorPane: some View {
@@ -61,7 +65,10 @@ struct SQLEditorView: View {
             SQLSyntaxEditor(
                 text: $state.sqlText,
                 columnHints: allColumnNames,
-                onCommandEnter: { Task { await state.executeSQL() } }
+                onCommandEnter: { Task { await state.executeSQL() } },
+                onCommandEscape: { Task { await state.goHome() } },
+                onMoveToResults: focusResultsFromEditor,
+                focusRequestID: editorFocusRequestID
             )
             .background(Theme.bg)
         }
@@ -118,63 +125,30 @@ struct SQLEditorView: View {
     }
 
     private func sqlResultGrid(_ data: QueryResultData) -> some View {
-        ScrollView([.horizontal, .vertical]) {
-            VStack(spacing: 0) {
-                resultHeader(data.columns)
-                resultRows(data)
-            }
-        }
+        NSDataGridView(
+            data: data,
+            selectedCells: $selectedCells,
+            anchorCell: $anchorCell,
+            columnWidths: $columnWidths,
+            focusRequestID: resultsFocusRequestID,
+            onExitUpFromFirstRow: {
+                editorFocusRequestID += 1
+            },
+            onCommandEscape: { Task { await state.goHome() } },
+            uiScale: state.fontScale
+        )
     }
 
-    private let sqlColWidth: CGFloat = 160
+    private func focusResultsFromEditor() {
+        guard let result = state.sqlResult,
+              !result.columns.isEmpty,
+              !result.rows.isEmpty else { return }
 
-    private func resultHeader(_ columns: [ColumnInfo]) -> some View {
-        HStack(spacing: 0) {
-            ForEach(columns) { col in
-                Text(col.name)
-                    .font(.system(.caption, design: .monospaced).weight(.semibold))
-                    .foregroundColor(Theme.text)
-                    .lineLimit(1)
-                    .padding(.horizontal, 8)
-                    .frame(width: sqlColWidth, height: 28, alignment: .leading)
-            }
+        if anchorCell == nil {
+            let addr = CellAddress(row: 0, col: 0)
+            selectedCells = [addr]
+            anchorCell = addr
         }
-        .background(Theme.surface)
-        .overlay(Rectangle().frame(height: 1).foregroundColor(Theme.border), alignment: .bottom)
-    }
-
-    private func resultRows(_ data: QueryResultData) -> some View {
-        LazyVStack(spacing: 0) {
-            ForEach(Array(data.rows.enumerated()), id: \.offset) { index, row in
-                resultRow(row, columns: data.columns, index: index)
-            }
-        }
-    }
-
-    private func resultRow(_ row: [String?], columns: [ColumnInfo], index: Int) -> some View {
-        HStack(spacing: 0) {
-            ForEach(Array(columns.enumerated()), id: \.offset) { colIdx, _ in
-                cellView(colIdx < row.count ? row[colIdx] : nil)
-                    .frame(width: sqlColWidth, height: 26, alignment: .leading)
-            }
-        }
-        .background(index % 2 == 0 ? Color.clear : Theme.surface.opacity(0.3))
-    }
-
-    private func cellView(_ value: String?) -> some View {
-        Group {
-            if let val = value {
-                Text(val)
-                    .foregroundColor(Theme.text)
-            } else {
-                Text("NULL")
-                    .foregroundColor(Theme.textTertiary)
-                    .italic()
-            }
-        }
-        .font(Theme.monoSmall)
-        .lineLimit(1)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        resultsFocusRequestID += 1
     }
 }

@@ -126,6 +126,8 @@ struct NeonBranch: Identifiable, Codable, Hashable {
     let name: String
     let parent_id: String?
     let current_state: String?
+    let created_at: String?
+    let updated_at: String?
 }
 
 struct NeonDatabase: Identifiable, Codable, Hashable {

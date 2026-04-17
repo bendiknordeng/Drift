@@ -19,6 +19,7 @@ final class AppState: ObservableObject {
     @Published var schemas: [SchemaInfo] = []
     @Published var selectedTable: TableRef?
     @Published var tableColumns: [TableRef: [TableColumn]] = [:]
+    @Published var isLoadingSchemas = false
 
     // Tabs & Navigation
     @Published var openTabs: [TableTab] = []
@@ -41,11 +42,17 @@ final class AppState: ObservableObject {
 
     // UI
     @Published var activeTab: ContentTab = .browser
+    @Published var appearance: AppAppearance = .dark {
+        didSet { UserDefaults.standard.set(appearance.rawValue, forKey: appearanceKey) }
+    }
+    @Published var sidebarNavigationDirection = 0
+    @Published var sidebarNavigationRequestID = 0
     @Published var showConnectionSheet = false
     @Published var showSettings = false
     @Published var showCommandPalette = false
     @Published var showGlobalSearch = false
     @Published var showLLMChat = false
+    @Published var isRefreshing = false
 
     // Global Search
     @Published var globalSearchQuery = ""
@@ -69,12 +76,17 @@ final class AppState: ObservableObject {
     @Published var fontScale: CGFloat = 1.0
 
     private let starredKey = "drift.starred_neon_branches"
+    private let appearanceKey = "drift.appearance"
 
     init() {
         connections = store.loadConnections()
         neon.apiKey = store.neonAPIKey
         llm.apiKey = store.llmAPIKey
         starredNeonBranches = Set(UserDefaults.standard.stringArray(forKey: starredKey) ?? [])
+        if let rawAppearance = UserDefaults.standard.string(forKey: appearanceKey),
+           let savedAppearance = AppAppearance(rawValue: rawAppearance) {
+            appearance = savedAppearance
+        }
         if neon.isConfigured {
             Task { await loadNeonWelcome() }
         }
@@ -99,7 +111,69 @@ final class AppState: ObservableObject {
     }
 
     func goHome() async {
-        await disconnect()
+        resetToWelcomeState()
+        try? await postgres.disconnect()
+    }
+
+    private func resetToWelcomeState() {
+        filterTask?.cancel()
+
+        isConnected = false
+        activeConnection = nil
+        isConnecting = false
+        connectionError = nil
+
+        schemas = []
+        selectedTable = nil
+        tableColumns = [:]
+        isLoadingSchemas = false
+
+        openTabs = []
+        navigationHistory = []
+        historyIndex = -1
+
+        tableData = nil
+        isLoadingData = false
+        currentOffset = 0
+        sortColumn = nil
+        sortDescending = false
+        columnFilters = [:]
+
+        sqlResult = nil
+        isSQLRunning = false
+        sqlError = nil
+
+        globalSearchQuery = ""
+        globalSearchResults = nil
+        isSearching = false
+
+        activeTab = .browser
+        showConnectionSheet = false
+        showSettings = false
+        showCommandPalette = false
+        showGlobalSearch = false
+        showLLMChat = false
+        sidebarNavigationDirection = 0
+        sidebarNavigationRequestID = 0
+    }
+
+    func requestSidebarNavigation(direction: Int) {
+        guard direction != 0 else { return }
+        sidebarNavigationDirection = direction
+        sidebarNavigationRequestID += 1
+    }
+
+    private func isDisconnectRelatedError(_ error: Error) -> Bool {
+        let debug = Self.debugDescription(error)
+        return !isConnected ||
+            !postgres.isConnected ||
+            debug.contains("clientClosedConnection") ||
+            debug.contains("notConnected")
+    }
+
+    private func presentDatabaseErrorIfNeeded(_ error: Error, assign: (String) -> Void) {
+        guard !isDisconnectRelatedError(error) else { return }
+        assign(Self.debugDescription(error))
     }
 
     // MARK: - Connection
@@ -141,14 +215,40 @@ final class AppState: ObservableObject {
     }
 
     func disconnect() async {
+        resetToWelcomeState()
         try? await postgres.disconnect()
-        isConnected = false
-        activeConnection = nil
-        schemas = []
-        selectedTable = nil
-        tableData = nil
-        tableColumns = [:]
-        columnFilters = [:]
+    }
+
+    func refreshCurrentContext() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        connectionError = nil
+
+        if isConnected {
+            switch activeTab {
+            case .browser:
+                await loadSchemas()
+                if selectedTable != nil {
+                    await loadTableData()
+                }
+                if showGlobalSearch, !globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    await performGlobalSearch()
+                }
+            case .sql:
+                await executeSQL()
+            }
+            return
+        }
+
+        connections = store.loadConnections()
+        if neon.isConfigured {
+            await loadNeonWelcome()
+        } else {
+            neonWelcomeProjects = []
+            neonWelcomeBranches = [:]
+        }
     }
 
     func removeConnection(_ connection: SavedConnection) {
@@ -159,16 +259,28 @@ final class AppState: ObservableObject {
     // MARK: - Schema
 
     func loadSchemas() async {
+        isLoadingSchemas = true
+        defer { isLoadingSchemas = false }
         do {
-            schemas = try await postgres.fetchSchemas()
-            for schema in schemas {
+            let fetchedSchemas = try await postgres.fetchSchemas()
+            guard isConnected, postgres.isConnected else { return }
+
+            var fetchedColumns: [TableRef: [TableColumn]] = [:]
+            for schema in fetchedSchemas {
+                guard isConnected, postgres.isConnected else { return }
                 for table in schema.tables {
+                    guard isConnected, postgres.isConnected else { return }
                     let ref = TableRef(schema: schema.name, table: table)
-                    tableColumns[ref] = try await postgres.fetchColumns(schema: schema.name, table: table)
+                    fetchedColumns[ref] = try await postgres.fetchColumns(schema: schema.name, table: table)
                 }
             }
+            guard isConnected, postgres.isConnected else { return }
+            schemas = fetchedSchemas
+            tableColumns = fetchedColumns
         } catch {
-            errorMessage = Self.debugDescription(error)
+            presentDatabaseErrorIfNeeded(error) { [weak self] message in
+                self?.errorMessage = message
+            }
         }
     }
 
@@ -254,8 +366,11 @@ final class AppState: ObservableObject {
     func loadTableData(showLoading: Bool = true) async {
         guard let ref = selectedTable, let cols = tableColumns[ref] else { return }
         if showLoading { isLoadingData = true }
+        defer {
+            if showLoading { isLoadingData = false }
+        }
         do {
-            tableData = try await postgres.fetchTableData(
+            let data = try await postgres.fetchTableData(
                 schema: ref.schema,
                 table: ref.table,
                 columns: cols,
@@ -265,10 +380,13 @@ final class AppState: ObservableObject {
                 sortDescending: sortDescending,
                 filters: columnFilters
             )
+            guard isConnected, postgres.isConnected else { return }
+            tableData = data
         } catch {
-            errorMessage = Self.debugDescription(error)
+            presentDatabaseErrorIfNeeded(error) { [weak self] message in
+                self?.errorMessage = message
+            }
         }
-        if showLoading { isLoadingData = false }
     }
 
     private var isLoadingMore = false
@@ -290,6 +408,10 @@ final class AppState: ObservableObject {
                 sortDescending: sortDescending,
                 filters: columnFilters
             )
+            guard isConnected, postgres.isConnected else {
+                isLoadingMore = false
+                return
+            }
             // Append rows to existing data
             let combinedRows = current.rows + more.rows
             tableData = QueryResultData(
@@ -300,7 +422,9 @@ final class AppState: ObservableObject {
                 truncated: more.truncated
             )
         } catch {
-            errorMessage = Self.debugDescription(error)
+            presentDatabaseErrorIfNeeded(error) { [weak self] message in
+                self?.errorMessage = message
+            }
         }
         isLoadingMore = false
     }
@@ -313,7 +437,7 @@ final class AppState: ObservableObject {
             sortDescending = false
         }
         currentOffset = 0
-        await loadTableData()
+        await loadTableData(showLoading: false)
     }
 
     private var filterTask: Task<Void, Never>?
@@ -347,12 +471,14 @@ final class AppState: ObservableObject {
         guard !sql.isEmpty else { return }
         isSQLRunning = true
         sqlError = nil
+        defer { isSQLRunning = false }
         do {
             sqlResult = try await postgres.executeSQL(sql)
         } catch {
-            sqlError = Self.debugDescription(error)
+            presentDatabaseErrorIfNeeded(error) { [weak self] message in
+                self?.sqlError = message
+            }
         }
-        isSQLRunning = false
     }
 
     // MARK: - Global Search
@@ -366,6 +492,7 @@ final class AppState: ObservableObject {
         }
 
         isSearching = true
+        defer { isSearching = false }
         do {
             globalSearchResults = try await postgres.globalSearch(
                 schema: ref.schema,
@@ -374,9 +501,10 @@ final class AppState: ObservableObject {
                 query: query
             )
         } catch {
-            errorMessage = Self.debugDescription(error)
+            presentDatabaseErrorIfNeeded(error) { [weak self] message in
+                self?.errorMessage = message
+            }
         }
-        isSearching = false
     }
 
     // MARK: - LLM

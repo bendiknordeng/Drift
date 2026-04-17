@@ -40,13 +40,18 @@
 | `⌘⇧E` | SQL editor |
 | `⌘⇧B` | Table browser |
 | `⌘N` | New connection |
+| `⌘1-9` | Open favourited/recent connection from home |
 | `⌘⏎` | Execute SQL |
+| `⌘R` | Refresh current context |
 | `⌘C` | Copy selected cells |
-| `⌘Esc` | Go home |
-| `⌘[` / `⌘]` | Navigate back/forward |
-| `⌘=` / `⌘-` | Zoom in/out |
+| `⌘A` | Select all loaded cells |
+| `⌘H` | Go home |
+| `⌘←` | Navigate back |
+| `⌘+` / `⌘-` | Zoom in/out |
 | `Arrow keys` | Navigate cells |
 | `Shift+Arrows` | Extend selection |
+| `⌘+Arrows` | Jump to edge in that direction |
+| `⌘⇧+Arrows` | Extend selection to edge |
 
 ## Getting Started
 
