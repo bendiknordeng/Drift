@@ -1,0 +1,32 @@
+name: Drift
+options:
+  bundleIdPrefix: ai.edda.drift
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+packages:
+  postgres-nio:
+    url: https://github.com/vapor/postgres-nio.git
+    from: "1.21.0"
+
+targets:
+  Drift:
+    type: application
+    platform: macOS
+    sources: [Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.edda.drift
+        PRODUCT_NAME: Drift
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.developer-tools"
+        GENERATE_INFOPLIST_FILE: "YES"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_VERSION: "5.10"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        CODE_SIGN_IDENTITY: "-"
+    dependencies:
+      - package: postgres-nio
+        product: PostgresNIO
