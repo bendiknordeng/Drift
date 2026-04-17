@@ -37,8 +37,8 @@
 | `⌘P` | Quick open (fuzzy table search) |
 | `⌘⇧F` | Global value search |
 | `⌘K` | AI query (Claude API) |
-| `⌘⇧E` | SQL editor |
-| `⌘⇧B` | Table browser |
+| `⌘E` | SQL editor |
+| `⌘B` | Table browser |
 | `⌘N` | New connection |
 | `⌘1-9` | Open favourited/recent connection from home |
 | `⌘⏎` | Execute SQL |

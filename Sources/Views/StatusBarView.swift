@@ -14,9 +14,7 @@ struct StatusBarView: View {
                     .font(Theme.monoSmall)
                     .foregroundColor(Theme.textSecondary)
                 if state.isRefreshing {
-                    ProgressView()
-                        .scaleEffect(0.45)
-                        .tint(Theme.accent)
+                    DriftSpinner(size: 10, lineWidth: 1.75)
                 }
             }
 
@@ -26,12 +24,6 @@ struct StatusBarView: View {
                 Text(ref.fullName)
                     .font(Theme.monoSmall)
                     .foregroundColor(Theme.textSecondary)
-
-                if let cols = state.tableColumns[ref] {
-                    Text("\(cols.count) columns")
-                        .font(Theme.monoSmall)
-                        .foregroundColor(Theme.textTertiary)
-                }
             }
 
             Spacer()

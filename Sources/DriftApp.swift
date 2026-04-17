@@ -21,6 +21,13 @@ struct DriftApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 800)
         .commands {
+            CommandGroup(replacing: .saveItem) {
+                Button("Toggle Sidebar") {
+                    NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("s", modifiers: .command)
+            }
+
             CommandGroup(replacing: .appVisibility) {
                 Button("Go Home") {
                     Task { await appState.goHome() }
@@ -70,12 +77,12 @@ struct DriftApp: App {
                 Button("SQL Editor") {
                     appState.activeTab = .sql
                 }
-                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .keyboardShortcut("e", modifiers: .command)
 
                 Button("Table Browser") {
                     appState.activeTab = .browser
                 }
-                .keyboardShortcut("b", modifiers: [.command, .shift])
+                .keyboardShortcut("b", modifiers: .command)
 
                 Divider()
 

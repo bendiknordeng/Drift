@@ -15,6 +15,26 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "sidebar.left")
+                    .font(.system(.caption2, weight: .semibold))
+                    .foregroundColor(Theme.textTertiary)
+                Text("Sidebar")
+                    .font(.system(.caption2, weight: .medium))
+                    .foregroundColor(Theme.textTertiary)
+                Kbd("⌘S")
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Theme.surface)
+            .overlay(
+                Rectangle()
+                    .frame(height: 1)
+                    .foregroundColor(Theme.borderSubtle),
+                alignment: .bottom
+            )
+
             // Search
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
@@ -25,6 +45,11 @@ struct SidebarView: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(Theme.text)
                     .focused($searchFocused)
+                    .onKeyPress(.rightArrow) {
+                        guard state.selectedTable != nil else { return .ignored }
+                        state.requestBrowserGridFocus()
+                        return .handled
+                    }
                     .onKeyPress(.downArrow) {
                         let tables = allFilteredTables
                         if !tables.isEmpty {
@@ -45,6 +70,7 @@ struct SidebarView: View {
                         }
                         return .handled
                     }
+                Kbd("⌘P")
                 if !searchText.isEmpty {
                     Button {
                         searchText = ""
@@ -101,8 +127,11 @@ struct SidebarView: View {
                 Button {
                     state.showConnectionSheet = true
                 } label: {
-                    Image(systemName: "plus")
-                        .font(.caption)
+                    HStack(spacing: 6) {
+                        Text("New Connection")
+                            .font(.system(.caption, weight: .medium))
+                        Kbd("⌘N")
+                    }
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(Theme.textSecondary)

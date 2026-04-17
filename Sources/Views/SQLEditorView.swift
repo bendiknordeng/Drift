@@ -25,26 +25,38 @@ struct SQLEditorView: View {
     }
 
     var body: some View {
-        VSplitView {
+        VStack(spacing: 12) {
             editorPane
-                .frame(minHeight: 150)
+                .frame(height: 280)
 
             resultsPane
-                .frame(minHeight: 100)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.bg)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.bottom, 12)
         .background(Theme.bg)
         .onAppear { editorFocusRequestID += 1 }
     }
 
     private var editorPane: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("SQL Editor")
-                    .font(Theme.captionFont)
-                    .foregroundColor(Theme.textSecondary)
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "terminal")
+                            .font(.system(.caption, weight: .semibold))
+                            .foregroundColor(Theme.accent)
+                        Text("SQL Editor")
+                            .font(Theme.captionFont)
+                            .foregroundColor(Theme.text)
+                    }
+                    Text("Autocomplete and keyboard-first navigation")
+                        .font(.system(.caption2))
+                        .foregroundColor(Theme.textTertiary)
+                }
                 Spacer()
-
-                Kbd("⌘⏎")
 
                 Button {
                     Task { await state.executeSQL() }
@@ -53,14 +65,17 @@ struct SQLEditorView: View {
                         Image(systemName: "play.fill")
                             .font(.caption2)
                         Text("Run")
+                        Kbd("⌘⏎", variant: .primary)
+                            .padding(.leading, 5)
+                            .padding(.trailing, -6)
                     }
                 }
                 .buttonStyle(DriftButtonStyle(isPrimary: true))
                 .disabled(state.isSQLRunning || state.sqlText.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Theme.surface)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Theme.editorHeader)
 
             SQLSyntaxEditor(
                 text: $state.sqlText,
@@ -70,8 +85,19 @@ struct SQLEditorView: View {
                 onMoveToResults: focusResultsFromEditor,
                 focusRequestID: editorFocusRequestID
             )
-            .background(Theme.bg)
+            .background(Theme.editorSurface)
         }
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.editorSurface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Theme.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
     }
 
     private var resultsPane: some View {
@@ -93,6 +119,8 @@ struct SQLEditorView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .background(Theme.bg)
+        .padding(.horizontal, 12)
     }
 
     private var resultsHeader: some View {
@@ -110,9 +138,7 @@ struct SQLEditorView: View {
             Spacer()
 
             if state.isSQLRunning {
-                ProgressView()
-                    .scaleEffect(0.6)
-                    .tint(Theme.accent)
+                DriftSpinner(size: 12, lineWidth: 1.9)
             }
         }
         .padding(.horizontal, 12)
@@ -144,7 +170,9 @@ struct SQLEditorView: View {
               !result.columns.isEmpty,
               !result.rows.isEmpty else { return }
 
-        if anchorCell == nil {
+        if let anchorCell, anchorCell.row < result.rows.count, anchorCell.col < result.columns.count {
+            selectedCells = [anchorCell]
+        } else {
             let addr = CellAddress(row: 0, col: 0)
             selectedCells = [addr]
             anchorCell = addr

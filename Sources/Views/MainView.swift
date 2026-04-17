@@ -11,6 +11,8 @@ struct MainView: View {
                         .navigationSplitViewColumnWidth(min: 200, ideal: Theme.sidebarWidth, max: 350)
                 } detail: {
                     VStack(spacing: 0) {
+                        homeBar
+                        Rectangle().fill(Theme.borderSubtle).frame(height: 1)
                         modeBar
                         Rectangle().fill(Theme.border).frame(height: 1)
 
@@ -35,6 +37,9 @@ struct MainView: View {
                         StatusBarView()
                     }
                     .background(Theme.bg)
+                    .overlay(alignment: .top) {
+                        windowTopLogo
+                    }
                 }
                 .navigationSplitViewStyle(.balanced)
             } else {
@@ -92,11 +97,52 @@ struct MainView: View {
         }
     }
 
-    // MARK: - Mode Bar (Browser / SQL)
+    // MARK: - Top Bars
+
+    private var homeBar: some View {
+        HStack(spacing: 0) {
+            Spacer().frame(width: 8)
+
+            Button {
+                Task { await state.goHome() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.left")
+                        .font(.system(.caption, weight: .semibold))
+                        .foregroundColor(Theme.textSecondary)
+                    Text("Home")
+                        .font(.system(.caption, weight: .medium))
+                        .foregroundColor(Theme.textSecondary)
+                    Kbd("⌘H")
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+        }
+        .frame(height: 40, alignment: .bottom)
+        .padding(.top, 0)
+        .padding(.bottom, 10)
+        .background(Theme.bg)
+    }
+
+    private var windowTopLogo: some View {
+        Image("DriftLogo")
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: 42, height: 42)
+            .opacity(0.95)
+            .padding(.top, 8)
+            .ignoresSafeArea(.container, edges: .top)
+            .allowsHitTesting(false)
+    }
 
     private var modeBar: some View {
         HStack(spacing: 0) {
             Spacer().frame(width: 12)
+
             ForEach(ContentTab.allCases, id: \.self) { tab in
                 Button {
                     state.activeTab = tab
@@ -162,9 +208,9 @@ struct MainView: View {
     private func modeBarShortcut(for tab: ContentTab) -> String? {
         switch tab {
         case .browser:
-            return "⌘⇧B"
+            return "⌘B"
         case .sql:
-            return "⌘⇧E"
+            return "⌘E"
         }
     }
 
@@ -250,9 +296,7 @@ struct MainView: View {
 
     private var browserLoadingState: some View {
         VStack(spacing: 14) {
-            ProgressView()
-                .scaleEffect(0.9)
-                .tint(Theme.accent)
+            DriftSpinner(size: 22, lineWidth: 2.75)
             Text("Loading schema…")
                 .font(.system(.body, weight: .medium))
                 .foregroundColor(Theme.text)
@@ -295,8 +339,8 @@ struct WelcomeView: View {
     @EnvironmentObject var state: AppState
     @State private var neonSearch = ""
     @State private var neonSelectedIndex = -1
-    @State private var neonBranchSort: NeonBranchSortKey = .name
-    @State private var neonBranchSortDescending = false
+    @State private var neonBranchSort: NeonBranchSortKey = .created
+    @State private var neonBranchSortDescending = true
     @State private var neonSections: [NeonProjectSection] = []
     @State private var allNeonBranches: [NeonBranchEntry] = []
     @FocusState private var viewFocused: Bool
@@ -311,7 +355,7 @@ struct WelcomeView: View {
     private let welcomeSidebarContentWidth: CGFloat = 340
     private let welcomeSidebarWidth: CGFloat = 392
     private let neonBranchNameColumnWidth: CGFloat = 640
-    private let neonBranchDateColumnWidth: CGFloat = 118
+    private let neonBranchDateColumnWidth: CGFloat = 168
 
     private var neonTableMinWidth: CGFloat {
         32 + 16 + 10 + neonBranchNameColumnWidth + 10 + neonBranchDateColumnWidth + 10 + neonBranchDateColumnWidth + 52
@@ -340,8 +384,10 @@ struct WelcomeView: View {
         .focused($viewFocused)
         .focusEffectDisabled()
         .onAppear {
-            viewFocused = true
-            rebuildNeonSections()
+            DispatchQueue.main.async {
+                viewFocused = true
+                rebuildNeonSections()
+            }
         }
         .onKeyPress(characters: CharacterSet(charactersIn: "123456789"), phases: .down) { press in
             guard press.modifiers == .command else { return .ignored }
@@ -357,19 +403,13 @@ struct WelcomeView: View {
             routeTypedCharacterToNeonSearch(press)
         }
         .onKeyPress(.downArrow) {
-            if !allNeonBranches.isEmpty { neonSelectedIndex = min(neonSelectedIndex + 1, allNeonBranches.count - 1) }
-            return .handled
+            handleNeonArrowNavigation(direction: 1)
         }
         .onKeyPress(.upArrow) {
-            neonSelectedIndex = max(-1, neonSelectedIndex - 1)
-            return .handled
+            handleNeonArrowNavigation(direction: -1)
         }
         .onKeyPress(.return) {
-            if let item = highlightedNeonBranch {
-                Task { await state.connectToNeonBranch(project: item.project, branch: item.branch) }
-                return .handled
-            }
-            return .ignored
+            connectHighlightedNeonBranch()
         }
         .onChange(of: neonSearch) { _, _ in
             neonSelectedIndex = -1
@@ -469,7 +509,7 @@ struct WelcomeView: View {
     }
 
     private var shortcutConnections: [SavedConnection] {
-        Array((favoriteConnections + recentConnectionsOnly).prefix(9))
+        state.homeShortcutConnections()
     }
 
     private var savedConnectionsList: some View {
@@ -620,6 +660,15 @@ struct WelcomeView: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(Theme.text)
                     .focused($neonSearchFocused)
+                    .onKeyPress(.downArrow) {
+                        handleNeonArrowNavigation(direction: 1)
+                    }
+                    .onKeyPress(.upArrow) {
+                        handleNeonArrowNavigation(direction: -1)
+                    }
+                    .onKeyPress(.return) {
+                        connectHighlightedNeonBranch()
+                    }
                     .onKeyPress(.escape) {
                         neonSearchFocused = false
                         viewFocused = true
@@ -745,10 +794,12 @@ struct WelcomeView: View {
                             Text(entry.createdLabel)
                                 .font(.system(.caption2, design: .monospaced))
                                 .foregroundColor(Theme.textTertiary)
+                                .lineLimit(1)
                                 .frame(width: neonBranchDateColumnWidth, alignment: .trailing)
                             Text(entry.updatedLabel)
                                 .font(.system(.caption2, design: .monospaced))
                                 .foregroundColor(Theme.textTertiary)
+                                .lineLimit(1)
                                 .frame(width: neonBranchDateColumnWidth, alignment: .trailing)
                             Spacer()
                         }
@@ -857,10 +908,32 @@ struct WelcomeView: View {
         let typed = press.characters
         guard !typed.isEmpty else { return .ignored }
 
-        neonSelectedIndex = -1
-        neonSearchFocused = true
-        viewFocused = false
-        neonSearch.append(typed)
+        DispatchQueue.main.async {
+            neonSelectedIndex = -1
+            neonSearchFocused = true
+            viewFocused = false
+            neonSearch.append(typed)
+        }
+        return .handled
+    }
+
+    private func handleNeonArrowNavigation(direction: Int) -> KeyPress.Result {
+        guard !allNeonBranches.isEmpty else { return .ignored }
+        DispatchQueue.main.async {
+            neonSearchFocused = false
+            viewFocused = true
+            if direction > 0 {
+                neonSelectedIndex = min(neonSelectedIndex + 1, allNeonBranches.count - 1)
+            } else {
+                neonSelectedIndex = max(-1, neonSelectedIndex - 1)
+            }
+        }
+        return .handled
+    }
+
+    private func connectHighlightedNeonBranch() -> KeyPress.Result {
+        guard let item = highlightedNeonBranch else { return .ignored }
+        Task { await state.connectToNeonBranch(project: item.project, branch: item.branch) }
         return .handled
     }
 
@@ -877,7 +950,7 @@ struct WelcomeView: View {
 
     private func formattedNeonDate(_ date: Date?) -> String {
         guard let date else { return "—" }
-        return date.formatted(date: .abbreviated, time: .omitted)
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
 
     private func compareNeonDates(lhs: Date?, rhs: Date?, fallbackLhs: String, fallbackRhs: String) -> Bool {

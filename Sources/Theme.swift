@@ -41,12 +41,18 @@ enum Theme {
     static let nsSurfaceHover = dynamicNSColor(lightHex: "E2E7F1", darkHex: "1F1F30")
     static let nsSurfaceElevated = dynamicNSColor(lightHex: "FDFDFF", darkHex: "222236")
     static let nsOverlay = dynamicNSColor(lightHex: "F3F5FA", darkHex: "12121C")
+    static let nsEditorSurface = dynamicNSColor(lightHex: "FBFCFF", darkHex: "141420")
+    static let nsEditorHeader = dynamicNSColor(lightHex: "F1F4FA", darkHex: "1A1A28")
+    static let nsEditorGutter = dynamicNSColor(lightHex: "EEF2F8", darkHex: "11111A")
 
     static let bg = Color(nsColor: nsBg)
     static let surface = Color(nsColor: nsSurface)
     static let surfaceHover = Color(nsColor: nsSurfaceHover)
     static let surfaceElevated = Color(nsColor: nsSurfaceElevated)
     static let overlay = Color(nsColor: nsOverlay)
+    static let editorSurface = Color(nsColor: nsEditorSurface)
+    static let editorHeader = Color(nsColor: nsEditorHeader)
+    static let editorGutter = Color(nsColor: nsEditorGutter)
 
     // Borders
     static let nsBorder = dynamicNSColor(lightHex: "D4D9E5", darkHex: "28283E")
@@ -195,5 +201,49 @@ struct DriftTextFieldStyle: TextFieldStyle {
                 RoundedRectangle(cornerRadius: Theme.smallRadius)
                     .stroke(Theme.border, lineWidth: 1)
             )
+    }
+}
+
+struct DriftSpinner: View {
+    var size: CGFloat = 18
+    var lineWidth: CGFloat = 2.25
+    var color: Color = Theme.accentHover
+    var trackColor: Color = Theme.border.opacity(0.45)
+
+    @State private var isAnimating = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(trackColor, lineWidth: lineWidth)
+
+            Circle()
+                .trim(from: 0.08, to: 0.72)
+                .stroke(
+                    color,
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(isAnimating ? 360 : 0))
+        }
+        .frame(width: size, height: size)
+        .onAppear { isAnimating = true }
+        .animation(.linear(duration: 0.85).repeatForever(autoreverses: false), value: isAnimating)
+    }
+}
+
+enum ScrollChrome {
+    static func apply(to scrollView: NSScrollView) {
+        scrollView.scrollerStyle = .overlay
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerKnobStyle = knobStyle(for: scrollView.effectiveAppearance)
+        scrollView.verticalScroller?.controlSize = .small
+        scrollView.horizontalScroller?.controlSize = .small
+        scrollView.verticalScroller?.alphaValue = 0.9
+        scrollView.horizontalScroller?.alphaValue = 0.9
+    }
+
+    private static func knobStyle(for appearance: NSAppearance) -> NSScroller.KnobStyle {
+        let match = appearance.bestMatch(from: [.darkAqua, .aqua])
+        return match == .darkAqua ? .light : .dark
     }
 }

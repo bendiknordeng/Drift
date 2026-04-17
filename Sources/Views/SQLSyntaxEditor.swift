@@ -1,10 +1,9 @@
 import SwiftUI
 import AppKit
 
-/// SQL editor with syntax highlighting and optional column-name autocomplete.
 struct SQLSyntaxEditor: NSViewRepresentable {
     @Binding var text: String
-    let columnHints: [String]  // Column names for autocomplete
+    let columnHints: [String]
     let onCommandEnter: () -> Void
     let onCommandEscape: (() -> Void)?
     let onMoveToResults: (() -> Void)?
@@ -31,255 +30,301 @@ struct SQLSyntaxEditor: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSScrollView()
-        scroll.drawsBackground = false
-        scroll.borderType = .noBorder
-        scroll.hasVerticalScroller = true
-        scroll.hasHorizontalScroller = false
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        ScrollChrome.apply(to: scrollView)
 
-        let textView = DriftEditorTextView()
-        textView.minSize = NSSize(width: 0, height: 0)
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-        textView.delegate = context.coordinator
-        textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        textView.textColor = Theme.nsText
-        textView.backgroundColor = .clear
-        textView.drawsBackground = false
+        let textView = SQLTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+        context.coordinator.textView = textView
+        configure(textView, in: scrollView, coordinator: context.coordinator)
+        textView.string = text
+        context.coordinator.applyHighlighting(to: textView)
+
+        scrollView.documentView = textView
+        context.coordinator.lastFocusRequestID = focusRequestID
+        KeyboardMonitor.shared.registerSQLEditor(textView)
+
+        DispatchQueue.main.async {
+            scrollView.window?.makeFirstResponder(textView)
+            textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+            textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+        }
+
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.parent = self
+        guard let textView = scrollView.documentView as? SQLTextView else { return }
+
+        configure(textView, in: scrollView, coordinator: context.coordinator)
+        KeyboardMonitor.shared.registerSQLEditor(textView)
+
+        if textView.string != text {
+            let selection = textView.selectedRange()
+            textView.string = text
+            textView.setSelectedRange(clampedRange(selection, in: textView.string))
+        }
+
+        context.coordinator.applyHighlighting(to: textView)
+
+        if context.coordinator.lastFocusRequestID != focusRequestID {
+            context.coordinator.lastFocusRequestID = focusRequestID
+            scrollView.window?.makeFirstResponder(textView)
+            textView.scrollRangeToVisible(textView.selectedRange())
+        }
+    }
+
+    private func configure(_ textView: SQLTextView, in scrollView: NSScrollView, coordinator: Coordinator) {
+        let palette = Palette(appearance: textView.effectiveAppearance)
+        ScrollChrome.apply(to: scrollView)
+        scrollView.contentView.backgroundColor = palette.background
+
+        textView.delegate = coordinator
+        textView.sqlDelegate = coordinator
+        textView.font = Self.editorFont
+        textView.textColor = palette.text
+        textView.backgroundColor = palette.background
+        textView.drawsBackground = true
+        textView.insertionPointColor = palette.accent
+        textView.textContainerInset = NSSize(width: 14, height: 6)
+        textView.isEditable = true
+        textView.isSelectable = true
         textView.isRichText = false
+        textView.importsGraphics = false
+        textView.usesFontPanel = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.isContinuousSpellCheckingEnabled = false
         textView.allowsUndo = true
-        textView.insertionPointColor = Theme.nsAccent
-        textView.textContainerInset = NSSize(width: 8, height: 8)
-        textView.string = text
-        textView.commandEscapeHandler = onCommandEscape
-        textView.moveToResultsHandler = onMoveToResults
-        textView.autoCompleteHandler = { [weak coordinator = context.coordinator] in
-            coordinator?.triggerCompletionIfNeeded()
-        }
-
-        scroll.documentView = textView
-        context.coordinator.textView = textView
-        context.coordinator.applyHighlighting()
-        context.coordinator.lastFocusRequestID = focusRequestID
-        return scroll
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.heightTracksTextView = false
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.typingAttributes = Self.baseTypingAttributes(textColor: palette.text)
     }
 
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        context.coordinator.parent = self
-        guard let textView = scrollView.documentView as? NSTextView else { return }
-        textView.textColor = Theme.nsText
-        textView.insertionPointColor = Theme.nsAccent
-        if let textView = textView as? DriftEditorTextView {
-            textView.commandEscapeHandler = onCommandEscape
-            textView.moveToResultsHandler = onMoveToResults
-            textView.autoCompleteHandler = { [weak coordinator = context.coordinator] in
-                coordinator?.triggerCompletionIfNeeded()
+    private func clampedRange(_ range: NSRange, in string: String) -> NSRange {
+        let length = (string as NSString).length
+        let location = min(range.location, length)
+        let selectedLength = min(range.length, max(0, length - location))
+        return NSRange(location: location, length: selectedLength)
+    }
+
+    private static let editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+
+    private static func baseTypingAttributes(textColor: NSColor) -> [NSAttributedString.Key: Any] {
+        [
+            .font: editorFont,
+            .foregroundColor: textColor
+        ]
+    }
+
+    private struct Palette {
+        let text: NSColor
+        let accent: NSColor
+        let background: NSColor
+
+        init(appearance: NSAppearance) {
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            if isDark {
+                text = NSColor(hex: "E2E2EC")
+                accent = NSColor(hex: "7B83EB")
+                background = NSColor(hex: "141420")
+            } else {
+                text = NSColor(hex: "161A24")
+                accent = NSColor(hex: "5561D6")
+                background = NSColor(hex: "FBFCFF")
             }
-        }
-        if textView.string != text {
-            let selected = textView.selectedRange()
-            textView.string = text
-            context.coordinator.applyHighlighting()
-            if selected.location <= textView.string.count {
-                textView.setSelectedRange(selected)
-            }
-        }
-        if context.coordinator.lastFocusRequestID != focusRequestID {
-            context.coordinator.lastFocusRequestID = focusRequestID
-            scrollView.window?.makeFirstResponder(textView)
         }
     }
 
-    class Coordinator: NSObject, NSTextViewDelegate {
+    final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: SQLSyntaxEditor
-        weak var textView: NSTextView?
-        var lastFocusRequestID: Int = 0
+        weak var textView: SQLTextView?
+        var lastFocusRequestID = 0
+        private var isApplyingHighlighting = false
 
         init(_ parent: SQLSyntaxEditor) {
             self.parent = parent
         }
 
         func textDidChange(_ notification: Notification) {
-            guard let tv = notification.object as? NSTextView else { return }
-            parent.text = tv.string
-            applyHighlighting()
+            guard let textView = notification.object as? SQLTextView else { return }
+            parent.text = textView.string
+            applyHighlighting(to: textView)
         }
 
-        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            // Cmd+Enter → execute
-            if commandSelector == #selector(NSResponder.insertNewline(_:)),
-               NSEvent.modifierFlags.contains(.command) {
-                parent.onCommandEnter()
-                return true
-            }
-            return false
+        func handleCommandEnter() {
+            parent.onCommandEnter()
         }
 
-        func textView(_ textView: NSTextView, completions words: [String], forPartialWordRange charRange: NSRange, indexOfSelectedItem index: UnsafeMutablePointer<Int>?) -> [String] {
-            let text = textView.string as NSString
-            guard charRange.location + charRange.length <= text.length else { return [] }
-            let partial = text.substring(with: charRange).lowercased()
-
-            let keywords = Self.sqlKeywords
-            let columns = parent.columnHints
-            let all = (keywords + columns).filter { $0.lowercased().hasPrefix(partial) }
-            return all
+        func handleEscape() {
+            parent.onCommandEscape?()
         }
 
-        func triggerCompletionIfNeeded() {
-            guard let textView else { return }
-            let nsText = textView.string as NSString
+        func moveToResultsIfNeeded(from textView: SQLTextView) -> Bool {
+            guard isCaretOnLastLine(textView) else { return false }
+            parent.onMoveToResults?()
+            return true
+        }
+
+        private func isCaretOnLastLine(_ textView: SQLTextView) -> Bool {
             let range = textView.selectedRange()
-            guard range.length == 0, range.location <= nsText.length else { return }
+            guard range.length == 0 else { return false }
 
-            let wordChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_"))
-            var start = range.location
-            while start > 0 {
-                guard let scalar = UnicodeScalar(nsText.character(at: start - 1)) else { break }
-                guard wordChars.contains(scalar) else { break }
-                start -= 1
+            let nsText = textView.string as NSString
+            let location = min(range.location, nsText.length)
+            let prefix = nsText.substring(to: location)
+            let currentLine = prefix.reduce(into: 0) { count, char in
+                if char == "\n" { count += 1 }
             }
-
-            let partialLength = range.location - start
-            guard partialLength >= 2 else { return }
-            textView.complete(nil)
+            let totalLines = textView.string.reduce(into: 1) { count, char in
+                if char == "\n" { count += 1 }
+            }
+            return currentLine >= max(0, totalLines - 1)
         }
 
-        func applyHighlighting() {
-            guard let tv = textView, let storage = tv.textStorage else { return }
-            let fullRange = NSRange(location: 0, length: storage.length)
-            storage.beginEditing()
-            storage.setAttributes([
-                .foregroundColor: Theme.nsText,
-                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        func applyHighlighting(to textView: SQLTextView) {
+            guard !isApplyingHighlighting,
+                  let textStorage = textView.textStorage else { return }
+
+            isApplyingHighlighting = true
+            defer { isApplyingHighlighting = false }
+
+            let palette = HighlightPalette(appearance: textView.effectiveAppearance)
+            let fullRange = NSRange(location: 0, length: textStorage.length)
+            let selection = textView.selectedRanges
+
+            textStorage.beginEditing()
+            textStorage.setAttributes([
+                .font: SQLSyntaxEditor.editorFont,
+                .foregroundColor: palette.base
             ], range: fullRange)
 
-            let text = storage.string
-
-            // Keywords (purple)
-            for keyword in Self.sqlKeywords {
-                let pattern = "\\b\(keyword)\\b"
-                if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                    regex.enumerateMatches(in: text, range: fullRange) { match, _, _ in
-                        if let range = match?.range {
-                            storage.addAttributes([
-                                .foregroundColor: Theme.nsAccent,
-                                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
-                            ], range: range)
-                        }
-                    }
-                }
+            Self.commentRegex.enumerateMatches(in: textStorage.string, options: [], range: fullRange) { match, _, _ in
+                guard let range = match?.range else { return }
+                textStorage.addAttributes([
+                    .foregroundColor: palette.comment
+                ], range: range)
             }
 
-            // Strings (green)
-            if let regex = try? NSRegularExpression(pattern: "'[^']*'", options: []) {
-                regex.enumerateMatches(in: text, range: fullRange) { match, _, _ in
-                    if let range = match?.range {
-                        storage.addAttribute(.foregroundColor,
-                            value: Theme.nsSuccess,
-                            range: range)
-                    }
-                }
+            Self.stringRegex.enumerateMatches(in: textStorage.string, options: [], range: fullRange) { match, _, _ in
+                guard let range = match?.range else { return }
+                textStorage.addAttributes([
+                    .foregroundColor: palette.string
+                ], range: range)
             }
 
-            // Numbers (orange)
-            if let regex = try? NSRegularExpression(pattern: "\\b\\d+(\\.\\d+)?\\b", options: []) {
-                regex.enumerateMatches(in: text, range: fullRange) { match, _, _ in
-                    if let range = match?.range {
-                        storage.addAttribute(.foregroundColor,
-                            value: Theme.nsWarning,
-                            range: range)
-                    }
-                }
+            Self.numberRegex.enumerateMatches(in: textStorage.string, options: [], range: fullRange) { match, _, _ in
+                guard let range = match?.range else { return }
+                textStorage.addAttributes([
+                    .foregroundColor: palette.number
+                ], range: range)
             }
 
-            // Comments (gray)
-            if let regex = try? NSRegularExpression(pattern: "--.*", options: []) {
-                regex.enumerateMatches(in: text, range: fullRange) { match, _, _ in
-                    if let range = match?.range {
-                        storage.addAttribute(.foregroundColor,
-                            value: Theme.nsTextSecondary,
-                            range: range)
-                    }
-                }
+            Self.keywordRegex.enumerateMatches(in: textStorage.string, options: [], range: fullRange) { match, _, _ in
+                guard let range = match?.range else { return }
+                textStorage.addAttributes([
+                    .foregroundColor: palette.keyword
+                ], range: range)
             }
 
-            storage.endEditing()
+            textStorage.endEditing()
+            textView.selectedRanges = selection
+            textView.typingAttributes = [
+                .font: SQLSyntaxEditor.editorFont,
+                .foregroundColor: palette.base
+            ]
         }
 
-        static let sqlKeywords: [String] = [
-            "SELECT", "FROM", "WHERE", "JOIN", "LEFT", "RIGHT", "INNER", "OUTER", "FULL",
-            "ON", "AND", "OR", "NOT", "IN", "IS", "NULL", "LIKE", "ILIKE", "BETWEEN",
-            "GROUP", "BY", "HAVING", "ORDER", "ASC", "DESC", "LIMIT", "OFFSET",
-            "INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE",
-            "CREATE", "TABLE", "ALTER", "DROP", "INDEX", "VIEW", "DATABASE",
-            "AS", "DISTINCT", "COUNT", "SUM", "AVG", "MIN", "MAX",
-            "UNION", "ALL", "EXISTS", "CASE", "WHEN", "THEN", "ELSE", "END",
-            "WITH", "RECURSIVE", "TRUE", "FALSE", "CAST", "COALESCE",
-            "PRIMARY", "KEY", "FOREIGN", "REFERENCES", "CONSTRAINT", "DEFAULT",
-            "RETURNING", "CONFLICT", "DO", "NOTHING"
-        ]
+        private struct HighlightPalette {
+            let base: NSColor
+            let keyword: NSColor
+            let string: NSColor
+            let number: NSColor
+            let comment: NSColor
+
+            init(appearance: NSAppearance) {
+                let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                if isDark {
+                    base = NSColor(hex: "E2E2EC")
+                    keyword = NSColor(hex: "8FA0FF")
+                    string = NSColor(hex: "8CD7A6")
+                    number = NSColor(hex: "F5C27A")
+                    comment = NSColor(hex: "6F7391")
+                } else {
+                    base = NSColor(hex: "161A24")
+                    keyword = NSColor(hex: "4056D6")
+                    string = NSColor(hex: "0F8A4B")
+                    number = NSColor(hex: "B56A00")
+                    comment = NSColor(hex: "8A93A8")
+                }
+            }
+        }
+
+        private static let keywordRegex: NSRegularExpression = {
+            let pattern = #"\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|ON|AND|OR|NOT|IN|IS|NULL|LIKE|ILIKE|BETWEEN|GROUP|BY|HAVING|ORDER|ASC|DESC|LIMIT|OFFSET|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|ALTER|DROP|INDEX|VIEW|DATABASE|AS|DISTINCT|COUNT|SUM|AVG|MIN|MAX|UNION|ALL|EXISTS|CASE|WHEN|THEN|ELSE|END|WITH|RECURSIVE|TRUE|FALSE|CAST|COALESCE|PRIMARY|KEY|FOREIGN|REFERENCES|CONSTRAINT|DEFAULT|RETURNING|CONFLICT|DO|NOTHING)\b"#
+            return try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        }()
+
+        private static let stringRegex: NSRegularExpression = {
+            try! NSRegularExpression(pattern: #"'(?:''|[^'])*'"#, options: [])
+        }()
+
+        private static let numberRegex: NSRegularExpression = {
+            try! NSRegularExpression(pattern: #"\b\d+(?:\.\d+)?\b"#, options: [])
+        }()
+
+        private static let commentRegex: NSRegularExpression = {
+            try! NSRegularExpression(pattern: #"--.*$"#, options: [.anchorsMatchLines])
+        }()
     }
 }
 
-final class DriftEditorTextView: NSTextView {
-    var commandEscapeHandler: (() -> Void)?
-    var moveToResultsHandler: (() -> Void)?
-    var autoCompleteHandler: (() -> Void)?
+final class SQLTextView: NSTextView {
+    weak var sqlDelegate: SQLSyntaxEditor.Coordinator?
 
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if (event.keyCode == 53 || event.keyCode == 4), modifiers == [.command] {
-            commandEscapeHandler?()
+        if event.keyCode == 125,
+           modifiers.isEmpty,
+           sqlDelegate?.moveToResultsIfNeeded(from: self) == true {
             return
         }
-        if event.keyCode == 125, modifiers.isEmpty, isCaretOnLastLine {
-            moveToResultsHandler?()
-            return
-        }
-        let shouldTriggerCompletion = modifiers.isEmpty && shouldTriggerAutoComplete(for: event)
+
         super.keyDown(with: event)
-        if shouldTriggerCompletion {
-            autoCompleteHandler?()
-        }
     }
 
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if (event.keyCode == 53 || event.keyCode == 4), modifiers == [.command] {
-            commandEscapeHandler?()
-            return true
-        }
-        return super.performKeyEquivalent(with: event)
-    }
+    override func doCommand(by selector: Selector) {
+        let modifiers = NSApp.currentEvent?.modifierFlags.intersection([.command, .shift, .option, .control]) ?? []
 
-    private var isCaretOnLastLine: Bool {
-        let range = selectedRange()
-        guard range.length == 0 else { return false }
-        let nsText = string as NSString
-        let location = min(range.location, nsText.length)
-        let prefix = nsText.substring(to: location)
-        let currentLine = prefix.reduce(into: 0) { count, char in
-            if char == "\n" { count += 1 }
+        if selector == #selector(NSResponder.insertNewline(_:)), modifiers == [.command] {
+            sqlDelegate?.handleCommandEnter()
+            return
         }
-        let totalLines = string.reduce(into: 1) { count, char in
-            if char == "\n" { count += 1 }
-        }
-        return currentLine >= max(0, totalLines - 1)
-    }
 
-    private func shouldTriggerAutoComplete(for event: NSEvent) -> Bool {
-        guard let characters = event.charactersIgnoringModifiers, !characters.isEmpty else { return false }
-        let wordChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_"))
-        return characters.unicodeScalars.allSatisfy(wordChars.contains)
+        if selector == #selector(NSResponder.cancelOperation(_:)), modifiers.isEmpty {
+            sqlDelegate?.handleEscape()
+            return
+        }
+
+        if selector == #selector(NSResponder.moveDown(_:)),
+           modifiers.isEmpty,
+           sqlDelegate?.moveToResultsIfNeeded(from: self) == true {
+            return
+        }
+
+        super.doCommand(by: selector)
     }
 }

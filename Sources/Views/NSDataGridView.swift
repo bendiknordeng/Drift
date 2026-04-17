@@ -26,6 +26,7 @@ struct NSDataGridView: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
+        ScrollChrome.apply(to: scrollView)
 
         let tableView = DriftCellTableView()
         tableView.style = .plain
@@ -62,6 +63,7 @@ struct NSDataGridView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let tableView = scrollView.documentView as? DriftCellTableView else { return }
+        ScrollChrome.apply(to: scrollView)
         if registerForBrowserKeyboardMonitor {
             KeyboardMonitor.shared.registerBrowserGrid(tableView)
         }
@@ -211,13 +213,20 @@ struct NSDataGridView: NSViewRepresentable {
 
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
             guard let colId = tableColumn?.identifier.rawValue else { return nil }
-            let cell = DriftCellView()
+            let identifier = NSUserInterfaceItemIdentifier(colId == "__row" ? "__row_cell" : "__data_cell")
+            let cell = (tableView.makeView(withIdentifier: identifier, owner: nil) as? DriftCellView) ?? DriftCellView()
+            cell.identifier = identifier
 
             if colId == "__row" {
                 cell.label.stringValue = "\(row + 1)"
+                cell.label.attributedStringValue = NSAttributedString(string: "\(row + 1)", attributes: [
+                    .foregroundColor: Theme.nsTextSecondary,
+                    .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                ])
                 cell.label.textColor = Theme.nsTextSecondary
                 cell.label.alignment = .center
                 cell.isSelected = false
+                cell.isFlashing = false
                 cell.coordinator = self
                 cell.colIndex = -1  // row number column
                 cell.rowIndex = row
@@ -517,7 +526,7 @@ class DriftCellView: NSView {
         guard let coord = coordinator, colIndex >= 0 else { return }
         // Convert window coordinates to table view coordinates
         guard let tv = coord.tableView else { return }
-        let pointInTable = adjustedPointInTable(for: event, tableView: tv, uiScale: coord.parent.uiScale)
+        let pointInTable = adjustedPointInTable(for: event, tableView: tv)
         let rowAt = tv.row(at: pointInTable)
         let colAt = tv.column(at: pointInTable)
         if rowAt >= 0, colAt >= 1 {
@@ -529,13 +538,8 @@ class DriftCellView: NSView {
         coordinator?.endDrag()
     }
 
-    private func adjustedPointInTable(for event: NSEvent, tableView: NSTableView, uiScale: CGFloat) -> NSPoint {
-        let point = tableView.convert(event.locationInWindow, from: nil)
-        guard abs(uiScale - 1.0) > 0.001 else { return point }
-
-        // The app scales the entire SwiftUI tree visually, so raw AppKit event locations
-        // need to be translated back into the table's logical coordinate space.
-        return NSPoint(x: point.x / uiScale, y: point.y / uiScale)
+    private func adjustedPointInTable(for event: NSEvent, tableView: NSTableView) -> NSPoint {
+        tableView.convert(event.locationInWindow, from: nil)
     }
 }
 

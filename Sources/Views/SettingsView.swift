@@ -272,8 +272,8 @@ struct SettingsView: View {
             ("Quick Open", "⌘P"),
             ("Search Values", "⌘⇧F"),
             ("AI Query", "⌘K"),
-            ("SQL Editor", "⌘⇧E"),
-            ("Table Browser", "⌘⇧B"),
+            ("SQL Editor", "⌘E"),
+            ("Table Browser", "⌘B"),
             ("Execute SQL", "⌘⏎"),
             ("Refresh", "⌘R"),
             ("New Connection", "⌘N"),
@@ -307,14 +307,21 @@ struct SettingsView: View {
 // MARK: - Kbd Component (shadcn-inspired)
 
 struct Kbd: View {
-    let keys: [String]
+    enum Variant {
+        case standard
+        case primary
+    }
 
-    init(_ shortcut: String) {
+    let keys: [String]
+    let variant: Variant
+
+    init(_ shortcut: String, variant: Variant = .standard) {
         var result: [String] = []
         for char in shortcut {
             result.append(String(char))
         }
         self.keys = result
+        self.variant = variant
     }
 
     var body: some View {
@@ -322,7 +329,7 @@ struct Kbd: View {
             ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
                 Text(key)
                     .font(.system(.caption, design: .rounded).weight(.medium))
-                    .foregroundColor(Theme.textSecondary)
+                    .foregroundColor(textColor)
                     .frame(minWidth: 14, minHeight: 14)
             }
         }
@@ -330,11 +337,38 @@ struct Kbd: View {
         .padding(.vertical, 3)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(Theme.surface)
+                .fill(backgroundColor)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 4)
-                .stroke(Theme.border, lineWidth: 1)
+                .stroke(borderColor, lineWidth: 1)
         )
+    }
+
+    private var textColor: Color {
+        switch variant {
+        case .standard:
+            return Theme.textSecondary
+        case .primary:
+            return Color.white.opacity(0.92)
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch variant {
+        case .standard:
+            return Theme.surface
+        case .primary:
+            return Color.white.opacity(0.12)
+        }
+    }
+
+    private var borderColor: Color {
+        switch variant {
+        case .standard:
+            return Theme.border
+        case .primary:
+            return Color.white.opacity(0.18)
+        }
     }
 }

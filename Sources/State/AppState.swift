@@ -45,6 +45,7 @@ final class AppState: ObservableObject {
     @Published var appearance: AppAppearance = .dark {
         didSet { UserDefaults.standard.set(appearance.rawValue, forKey: appearanceKey) }
     }
+    @Published var browserGridFocusRequestID = 0
     @Published var sidebarNavigationDirection = 0
     @Published var sidebarNavigationRequestID = 0
     @Published var showConnectionSheet = false
@@ -77,9 +78,14 @@ final class AppState: ObservableObject {
 
     private let starredKey = "drift.starred_neon_branches"
     private let appearanceKey = "drift.appearance"
+    private var loadingTableColumns: Set<TableRef> = []
 
     init() {
-        connections = store.loadConnections()
+        let loadedConnections = deduplicatedConnections(store.loadConnections())
+        connections = loadedConnections
+        if loadedConnections != store.loadConnections() {
+            store.saveConnections(loadedConnections)
+        }
         neon.apiKey = store.neonAPIKey
         llm.apiKey = store.llmAPIKey
         starredNeonBranches = Set(UserDefaults.standard.stringArray(forKey: starredKey) ?? [])
@@ -153,8 +159,13 @@ final class AppState: ObservableObject {
         showCommandPalette = false
         showGlobalSearch = false
         showLLMChat = false
+        browserGridFocusRequestID = 0
         sidebarNavigationDirection = 0
         sidebarNavigationRequestID = 0
+    }
+
+    func requestBrowserGridFocus() {
+        browserGridFocusRequestID += 1
     }
 
     func requestSidebarNavigation(direction: Int) {
@@ -187,11 +198,12 @@ final class AppState: ObservableObject {
             isConnected = true
             isConnecting = false
 
-            // Save if new
-            if !connections.contains(where: { $0.id == connection.id }) {
-                connections.append(connection)
-                store.saveConnections(connections)
-            }
+            // Keep recents unique by logical connection target while moving the active one to the end.
+            let updatedConnections = deduplicatedConnections(
+                connections.filter { $0.recentsIdentityKey != connection.recentsIdentityKey } + [connection]
+            )
+            connections = updatedConnections
+            store.saveConnections(updatedConnections)
 
             await loadSchemas()
         } catch {
@@ -252,8 +264,36 @@ final class AppState: ObservableObject {
     }
 
     func removeConnection(_ connection: SavedConnection) {
-        connections.removeAll { $0.id == connection.id }
+        connections.removeAll { $0.recentsIdentityKey == connection.recentsIdentityKey }
         store.saveConnections(connections)
+    }
+
+    private func deduplicatedConnections(_ items: [SavedConnection]) -> [SavedConnection] {
+        var seenKeys: Set<String> = []
+        var deduplicatedReversed: [SavedConnection] = []
+
+        for connection in items.reversed() {
+            if seenKeys.insert(connection.recentsIdentityKey).inserted {
+                deduplicatedReversed.append(connection)
+            }
+        }
+
+        return deduplicatedReversed.reversed()
+    }
+
+    func homeShortcutConnections() -> [SavedConnection] {
+        let sorted = Array(connections.reversed())
+        let favorites = sorted.filter { connection in
+            guard let projectId = connection.neonProjectId,
+                  let branchId = connection.neonBranchId else { return false }
+            return isNeonBranchStarred(projectId: projectId, branchId: branchId)
+        }
+        let recents = sorted.filter { connection in
+            guard let projectId = connection.neonProjectId,
+                  let branchId = connection.neonBranchId else { return true }
+            return !isNeonBranchStarred(projectId: projectId, branchId: branchId)
+        }
+        return Array((favorites + recents).prefix(9))
     }
 
     // MARK: - Schema
@@ -264,19 +304,14 @@ final class AppState: ObservableObject {
         do {
             let fetchedSchemas = try await postgres.fetchSchemas()
             guard isConnected, postgres.isConnected else { return }
-
-            var fetchedColumns: [TableRef: [TableColumn]] = [:]
-            for schema in fetchedSchemas {
-                guard isConnected, postgres.isConnected else { return }
-                for table in schema.tables {
-                    guard isConnected, postgres.isConnected else { return }
-                    let ref = TableRef(schema: schema.name, table: table)
-                    fetchedColumns[ref] = try await postgres.fetchColumns(schema: schema.name, table: table)
-                }
-            }
-            guard isConnected, postgres.isConnected else { return }
             schemas = fetchedSchemas
-            tableColumns = fetchedColumns
+
+            let validRefs = Set(
+                fetchedSchemas.flatMap { schema in
+                    schema.tables.map { TableRef(schema: schema.name, table: $0) }
+                }
+            )
+            tableColumns = tableColumns.filter { validRefs.contains($0.key) }
         } catch {
             presentDatabaseErrorIfNeeded(error) { [weak self] message in
                 self?.errorMessage = message
@@ -364,11 +399,12 @@ final class AppState: ObservableObject {
     }
 
     func loadTableData(showLoading: Bool = true) async {
-        guard let ref = selectedTable, let cols = tableColumns[ref] else { return }
         if showLoading { isLoadingData = true }
         defer {
             if showLoading { isLoadingData = false }
         }
+        guard let ref = selectedTable,
+              let cols = await ensureColumnsLoaded(for: ref) else { return }
         do {
             let data = try await postgres.fetchTableData(
                 schema: ref.schema,
@@ -393,7 +429,8 @@ final class AppState: ObservableObject {
 
     func loadMoreRows() async {
         guard !isLoadingMore else { return }
-        guard let ref = selectedTable, let cols = tableColumns[ref] else { return }
+        guard let ref = selectedTable,
+              let cols = await ensureColumnsLoaded(for: ref) else { return }
         guard let current = tableData, current.truncated else { return }
         isLoadingMore = true
         let nextOffset = current.rows.count
@@ -484,7 +521,8 @@ final class AppState: ObservableObject {
     // MARK: - Global Search
 
     func performGlobalSearch() async {
-        guard let ref = selectedTable, let cols = tableColumns[ref] else { return }
+        guard let ref = selectedTable,
+              let cols = await ensureColumnsLoaded(for: ref) else { return }
         let query = globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
             globalSearchResults = nil
@@ -515,6 +553,7 @@ final class AppState: ObservableObject {
         isLLMLoading = true
 
         do {
+            await ensureAllTableColumnsLoadedForSchemaContext()
             let context = llm.buildSchemaContext(schemas: schemas, columns: tableColumns)
             let response = try await llm.generateSQL(userQuery: question, schemaContext: context)
 
@@ -529,6 +568,52 @@ final class AppState: ObservableObject {
             llmMessages.append(LLMMessage(role: .assistant, content: "Error: \(error.localizedDescription)"))
         }
         isLLMLoading = false
+    }
+
+    private func ensureColumnsLoaded(for ref: TableRef) async -> [TableColumn]? {
+        if let cols = tableColumns[ref] {
+            return cols
+        }
+
+        if loadingTableColumns.contains(ref) {
+            while loadingTableColumns.contains(ref) {
+                try? await Task.sleep(for: .milliseconds(25))
+            }
+            return tableColumns[ref]
+        }
+
+        loadingTableColumns.insert(ref)
+        defer { loadingTableColumns.remove(ref) }
+
+        do {
+            let cols = try await postgres.fetchColumns(schema: ref.schema, table: ref.table)
+            guard isConnected, postgres.isConnected else { return nil }
+            tableColumns[ref] = cols
+            return cols
+        } catch {
+            presentDatabaseErrorIfNeeded(error) { [weak self] message in
+                self?.errorMessage = message
+            }
+            return nil
+        }
+    }
+
+    private func ensureAllTableColumnsLoadedForSchemaContext() async {
+        let totalTableCount = schemas.reduce(into: 0) { count, schema in
+            count += schema.tables.count
+        }
+        guard totalTableCount > 0, tableColumns.count < totalTableCount else { return }
+
+        do {
+            let metadata = try await postgres.fetchSchemaMetadata()
+            guard isConnected, postgres.isConnected else { return }
+            schemas = metadata.schemas
+            tableColumns = metadata.columnsByTable
+        } catch {
+            presentDatabaseErrorIfNeeded(error) { [weak self] message in
+                self?.errorMessage = message
+            }
+        }
     }
 
     // MARK: - Settings

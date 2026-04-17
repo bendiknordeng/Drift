@@ -24,9 +24,7 @@ struct DataGridView: View {
     var body: some View {
         VStack(spacing: 0) {
             if state.isLoadingData {
-                ProgressView()
-                    .scaleEffect(0.8)
-                    .tint(Theme.accent)
+                DriftSpinner(size: 20, lineWidth: 2.5)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let data = state.tableData {
                 gridContent(data)
@@ -52,6 +50,7 @@ struct DataGridView: View {
                 onLoadMore: { Task { await state.loadMoreRows() } },
                 truncated: data.truncated,
                 registerForBrowserKeyboardMonitor: true,
+                focusRequestID: state.browserGridFocusRequestID,
                 onCommandEscape: { Task { await state.goHome() } },
                 uiScale: state.fontScale
             )
