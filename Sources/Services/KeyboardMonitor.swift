@@ -7,13 +7,13 @@ final class KeyboardMonitor {
     private var monitor: Any?
     private weak var appState: AppState?
     private weak var browserGridTableView: DriftCellTableView?
-    private weak var sqlEditorTextView: NSTextView?
+    private weak var sqlEditorTextView: SQLTextView?
 
     func registerBrowserGrid(_ tableView: DriftCellTableView) {
         browserGridTableView = tableView
     }
 
-    func registerSQLEditor(_ textView: NSTextView) {
+    func registerSQLEditor(_ textView: SQLTextView) {
         sqlEditorTextView = textView
     }
 
@@ -44,6 +44,10 @@ final class KeyboardMonitor {
             }
 
             if self.routeBrowserSidebarKey(event, appState: appState) {
+                return nil
+            }
+
+            if self.routeSQLSnippetShortcut(event, appState: appState) {
                 return nil
             }
 
@@ -240,6 +244,44 @@ final class KeyboardMonitor {
 
         window.makeFirstResponder(textView)
         return false
+    }
+
+    private func routeSQLSnippetShortcut(_ event: NSEvent, appState: AppState) -> Bool {
+        guard appState.isConnected,
+              appState.activeTab == .sql,
+              !appState.showCommandPalette,
+              !appState.showGlobalSearch,
+              !appState.showLLMChat,
+              !appState.showSettings,
+              !appState.showConnectionSheet,
+              let textView = sqlEditorTextView,
+              let window = textView.window else {
+            return false
+        }
+
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard modifiers == [.command],
+              let characters = event.charactersIgnoringModifiers,
+              let digit = Int(characters),
+              let snippet = sqlSnippet(for: digit) else {
+            return false
+        }
+
+        window.makeFirstResponder(textView)
+        textView.insertSQLSnippet(snippet)
+        return true
+    }
+
+    private func sqlSnippet(for digit: Int) -> String? {
+        switch digit {
+        case 1: return "SELECT "
+        case 2: return "FROM "
+        case 3: return "WHERE "
+        case 4: return "JOIN "
+        case 5: return "GROUP BY "
+        case 6: return "LIMIT "
+        default: return nil
+        }
     }
 
     private func shouldRouteToSQLEditor(_ event: NSEvent) -> Bool {

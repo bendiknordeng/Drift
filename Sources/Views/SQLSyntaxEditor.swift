@@ -295,6 +295,11 @@ struct SQLSyntaxEditor: NSViewRepresentable {
 final class SQLTextView: NSTextView {
     weak var sqlDelegate: SQLSyntaxEditor.Coordinator?
 
+    func insertSQLSnippet(_ snippet: String) {
+        let replacementRange = selectedRange()
+        insertText(snippet, replacementRange: replacementRange)
+    }
+
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if event.keyCode == 125,

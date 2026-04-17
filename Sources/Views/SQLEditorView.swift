@@ -8,6 +8,15 @@ struct SQLEditorView: View {
     @State private var editorFocusRequestID = 0
     @State private var resultsFocusRequestID = 0
 
+    private let sqlSnippetShortcuts: [(shortcut: String, snippet: String)] = [
+        ("⌘1", "SELECT"),
+        ("⌘2", "FROM"),
+        ("⌘3", "WHERE"),
+        ("⌘4", "JOIN"),
+        ("⌘5", "GROUP BY"),
+        ("⌘6", "LIMIT")
+    ]
+
     private var allColumnNames: [String] {
         var names = Set<String>()
         for cols in state.tableColumns.values {
@@ -86,6 +95,8 @@ struct SQLEditorView: View {
                 focusRequestID: editorFocusRequestID
             )
             .background(Theme.editorSurface)
+
+            sqlSnippetFooter
         }
         .background(
             RoundedRectangle(cornerRadius: 12)
@@ -98,6 +109,32 @@ struct SQLEditorView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, 12)
         .padding(.top, 12)
+    }
+
+    private var sqlSnippetFooter: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                Text("Quick insert")
+                    .font(.system(.caption2, weight: .semibold))
+                    .foregroundColor(Theme.textTertiary)
+
+                ForEach(Array(sqlSnippetShortcuts.enumerated()), id: \.offset) { _, item in
+                    HStack(spacing: 6) {
+                        Kbd(item.shortcut)
+                        Text(item.snippet)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+        }
+        .background(Theme.surface.opacity(0.7))
+        .overlay(
+            Rectangle().frame(height: 1).foregroundColor(Theme.border),
+            alignment: .top
+        )
     }
 
     private var resultsPane: some View {

@@ -273,6 +273,7 @@ struct SettingsView: View {
             ("Search Values", "⌘⇧F"),
             ("AI Query", "⌘K"),
             ("SQL Editor", "⌘E"),
+            ("SQL Snippets", "⌘1-6"),
             ("Table Browser", "⌘B"),
             ("Execute SQL", "⌘⏎"),
             ("Refresh", "⌘R"),
