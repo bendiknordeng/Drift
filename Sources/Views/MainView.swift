@@ -713,8 +713,8 @@ struct WelcomeView: View {
         HStack(spacing: 10) {
             Color.clear.frame(width: 16, height: 1)
             neonBranchSortButton(.name, title: "Branch", width: neonBranchNameColumnWidth, alignment: .leading)
-            neonBranchSortButton(.created, title: "Created", width: neonBranchDateColumnWidth, alignment: .trailing)
-            neonBranchSortButton(.updated, title: "Updated", width: neonBranchDateColumnWidth, alignment: .trailing)
+            neonBranchSortButton(.created, title: "Created", width: neonBranchDateColumnWidth, alignment: .leading)
+            neonBranchSortButton(.updated, title: "Updated", width: neonBranchDateColumnWidth, alignment: .leading)
             Spacer(minLength: 0)
             Color.clear.frame(width: 28, height: 1)
         }
@@ -739,7 +739,6 @@ struct WelcomeView: View {
             }
         } label: {
             HStack(spacing: 4) {
-                if alignment == .trailing { Spacer(minLength: 0) }
                 Text(title)
                     .font(.system(.caption2, weight: .semibold))
                     .foregroundColor(neonBranchSort == key ? Theme.text : Theme.textTertiary)
@@ -748,7 +747,7 @@ struct WelcomeView: View {
                         .font(.system(size: 8, weight: .bold))
                         .foregroundColor(Theme.accent)
                 }
-                if alignment == .leading { Spacer(minLength: 0) }
+                Spacer(minLength: 0)
             }
             .frame(width: width, alignment: alignment)
             .contentShape(Rectangle())
@@ -795,12 +794,12 @@ struct WelcomeView: View {
                                 .font(.system(.caption2, design: .monospaced))
                                 .foregroundColor(Theme.textTertiary)
                                 .lineLimit(1)
-                                .frame(width: neonBranchDateColumnWidth, alignment: .trailing)
+                                .frame(width: neonBranchDateColumnWidth, alignment: .leading)
                             Text(entry.updatedLabel)
                                 .font(.system(.caption2, design: .monospaced))
                                 .foregroundColor(Theme.textTertiary)
                                 .lineLimit(1)
-                                .frame(width: neonBranchDateColumnWidth, alignment: .trailing)
+                                .frame(width: neonBranchDateColumnWidth, alignment: .leading)
                             Spacer()
                         }
                         .frame(minWidth: neonTableMinWidth - 36, alignment: .leading)
