@@ -74,6 +74,25 @@ swift run Drift
 open Package.swift
 ```
 
+### Release PKG
+
+GitHub Actions builds an Apple Silicon installer package on every `v*` tag and from manual workflow dispatch:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow publishes `Drift-<version>-arm64.pkg` to the GitHub Release. The package installs `Drift.app` into `/Applications`.
+
+You can also build the package locally:
+
+```bash
+VERSION=0.1.0 BUILD_NUMBER=1 ARCH=arm64 scripts/package-macos.sh
+```
+
+The local output is written to `dist/`.
+
 ### Connect to a Database
 
 1. Launch Drift
