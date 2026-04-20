@@ -15,7 +15,8 @@ let package = Package(
             dependencies: [
                 .product(name: "PostgresNIO", package: "postgres-nio"),
             ],
-            path: "Sources"
+            path: "Sources",
+            exclude: ["Assets.xcassets"]
         ),
     ]
 )

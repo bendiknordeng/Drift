@@ -11,6 +11,8 @@ struct MainView: View {
                         .navigationSplitViewColumnWidth(min: 200, ideal: Theme.sidebarWidth, max: 350)
                 } detail: {
                     VStack(spacing: 0) {
+                        homeBar
+                        Rectangle().fill(Theme.borderSubtle).frame(height: 1)
                         modeBar
                         Rectangle().fill(Theme.border).frame(height: 1)
 
@@ -21,7 +23,9 @@ struct MainView: View {
 
                         switch state.activeTab {
                         case .browser:
-                            if state.selectedTable != nil {
+                            if state.isLoadingSchemas && state.schemas.isEmpty {
+                                browserLoadingState
+                            } else if state.selectedTable != nil {
                                 DataGridView()
                             } else {
                                 emptyState("Select a table from the sidebar", icon: "tablecells")
@@ -33,6 +37,9 @@ struct MainView: View {
                         StatusBarView()
                     }
                     .background(Theme.bg)
+                    .overlay(alignment: .top) {
+                        windowTopLogo
+                    }
                 }
                 .navigationSplitViewStyle(.balanced)
             } else {
@@ -68,6 +75,11 @@ struct MainView: View {
         .animation(.easeOut(duration: 0.15), value: state.showGlobalSearch)
         .animation(.easeOut(duration: 0.15), value: state.showLLMChat)
         .animation(.easeOut(duration: 0.15), value: state.showSettings)
+        .onKeyPress(.escape, phases: .down) { press in
+            guard press.modifiers.contains(.command), state.isConnected else { return .ignored }
+            Task { await state.goHome() }
+            return .handled
+        }
         .onAppear {
             KeyboardMonitor.shared.start(appState: state)
         }
@@ -85,20 +97,66 @@ struct MainView: View {
         }
     }
 
-    // MARK: - Mode Bar (Browser / SQL)
+    // MARK: - Top Bars
+
+    private var homeBar: some View {
+        HStack(spacing: 0) {
+            Spacer().frame(width: 8)
+
+            Button {
+                Task { await state.goHome() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.left")
+                        .font(.system(.caption, weight: .semibold))
+                        .foregroundColor(Theme.textSecondary)
+                    Text("Home")
+                        .font(.system(.caption, weight: .medium))
+                        .foregroundColor(Theme.textSecondary)
+                    Kbd("⌘H")
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+        }
+        .frame(height: 40, alignment: .bottom)
+        .padding(.top, 0)
+        .padding(.bottom, 10)
+        .background(Theme.bg)
+    }
+
+    private var windowTopLogo: some View {
+        Image("DriftLogo")
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: 42, height: 42)
+            .opacity(0.95)
+            .padding(.top, 8)
+            .ignoresSafeArea(.container, edges: .top)
+            .allowsHitTesting(false)
+    }
 
     private var modeBar: some View {
         HStack(spacing: 0) {
             Spacer().frame(width: 12)
+
             ForEach(ContentTab.allCases, id: \.self) { tab in
                 Button {
                     state.activeTab = tab
                 } label: {
-                    Text(tab.rawValue)
-                        .font(.system(.caption, weight: .medium))
-                        .foregroundColor(state.activeTab == tab ? Theme.text : Theme.textTertiary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
+                    HStack(spacing: 6) {
+                        Text(tab.rawValue)
+                            .font(.system(.caption, weight: .medium))
+                            .foregroundColor(state.activeTab == tab ? Theme.text : Theme.textTertiary)
+                        if let shortcut = modeBarShortcut(for: tab) {
+                            Kbd(shortcut)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
                 }
                 .buttonStyle(.plain)
                 .overlay(
@@ -145,6 +203,15 @@ struct MainView: View {
         }
         .padding(.vertical, 2)
         .background(Theme.bg)
+    }
+
+    private func modeBarShortcut(for tab: ContentTab) -> String? {
+        switch tab {
+        case .browser:
+            return "⌘B"
+        case .sql:
+            return "⌘E"
+        }
     }
 
     // MARK: - Table Tabs
@@ -226,25 +293,77 @@ struct MainView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg)
     }
+
+    private var browserLoadingState: some View {
+        VStack(spacing: 14) {
+            DriftSpinner(size: 22, lineWidth: 2.75)
+            Text("Loading schema…")
+                .font(.system(.body, weight: .medium))
+                .foregroundColor(Theme.text)
+            Text("Fetching tables and columns for this connection")
+                .font(.caption)
+                .foregroundColor(Theme.textSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.bg)
+    }
 }
 
 // MARK: - Welcome View (no connection)
 
 struct WelcomeView: View {
+    private enum NeonBranchSortKey: Equatable {
+        case name
+        case created
+        case updated
+    }
+
+    private struct NeonBranchEntry: Identifiable {
+        let project: NeonProject
+        let branch: NeonBranch
+        let createdDate: Date?
+        let updatedDate: Date?
+        let createdLabel: String
+        let updatedLabel: String
+
+        var id: String { "\(project.id)/\(branch.id)" }
+    }
+
+    private struct NeonProjectSection: Identifiable {
+        let project: NeonProject
+        let branches: [NeonBranchEntry]
+
+        var id: String { project.id }
+    }
+
     @EnvironmentObject var state: AppState
     @State private var neonSearch = ""
     @State private var neonSelectedIndex = -1
+    @State private var neonBranchSort: NeonBranchSortKey = .created
+    @State private var neonBranchSortDescending = true
+    @State private var neonSections: [NeonProjectSection] = []
+    @State private var allNeonBranches: [NeonBranchEntry] = []
     @FocusState private var viewFocused: Bool
     @FocusState private var neonSearchFocused: Bool
+    private let neonDateFormatter = ISO8601DateFormatter()
+    private let homeSearchActivationCharacters =
+        CharacterSet.letters
+        .union(.decimalDigits)
+        .union(.punctuationCharacters)
+        .union(.symbols)
+        .union(CharacterSet(charactersIn: " "))
+    private let welcomeSidebarContentWidth: CGFloat = 340
+    private let welcomeSidebarWidth: CGFloat = 392
+    private let neonBranchNameColumnWidth: CGFloat = 640
+    private let neonBranchDateColumnWidth: CGFloat = 168
 
-    private var allNeonBranches: [(project: NeonProject, branch: NeonBranch)] {
-        var result: [(NeonProject, NeonBranch)] = []
-        for p in filteredProjects {
-            for b in sortedBranches(for: p) {
-                result.append((p, b))
-            }
-        }
-        return result
+    private var neonTableMinWidth: CGFloat {
+        32 + 16 + 10 + neonBranchNameColumnWidth + 10 + neonBranchDateColumnWidth + 10 + neonBranchDateColumnWidth + 52
+    }
+
+    private var highlightedNeonBranch: NeonBranchEntry? {
+        guard neonSelectedIndex >= 0, neonSelectedIndex < allNeonBranches.count else { return nil }
+        return allNeonBranches[neonSelectedIndex]
     }
 
     var body: some View {
@@ -264,47 +383,48 @@ struct WelcomeView: View {
         .focusable()
         .focused($viewFocused)
         .focusEffectDisabled()
-        .onAppear { viewFocused = true }
+        .onAppear {
+            DispatchQueue.main.async {
+                viewFocused = true
+                rebuildNeonSections()
+            }
+        }
         .onKeyPress(characters: CharacterSet(charactersIn: "123456789"), phases: .down) { press in
-            let recentList = Array(state.connections.suffix(9).reversed())
-            if let digit = Int(String(press.characters)), digit >= 1, digit <= recentList.count {
-                let conn = recentList[digit - 1]
+            guard press.modifiers == .command else { return .ignored }
+            let shortcuts = shortcutConnections
+            if let digit = Int(String(press.characters)), digit >= 1, digit <= shortcuts.count {
+                let conn = shortcuts[digit - 1]
                 Task { await state.connect(to: conn) }
                 return .handled
             }
             return .ignored
         }
-        .onKeyPress(characters: CharacterSet(charactersIn: "/"), phases: .down) { _ in
-            if state.neon.isConfigured { neonSearchFocused = true }
-            return .handled
+        .onKeyPress(characters: homeSearchActivationCharacters, phases: .down) { press in
+            routeTypedCharacterToNeonSearch(press)
         }
         .onKeyPress(.downArrow) {
-            let items = allNeonBranches
-            if !items.isEmpty { neonSelectedIndex = min(neonSelectedIndex + 1, items.count - 1) }
-            return .handled
+            handleNeonArrowNavigation(direction: 1)
         }
         .onKeyPress(.upArrow) {
-            neonSelectedIndex = max(-1, neonSelectedIndex - 1)
-            return .handled
+            handleNeonArrowNavigation(direction: -1)
         }
         .onKeyPress(.return) {
-            let items = allNeonBranches
-            if neonSelectedIndex >= 0, neonSelectedIndex < items.count {
-                let item = items[neonSelectedIndex]
-                Task { await state.connectToNeonBranch(project: item.project, branch: item.branch) }
-                return .handled
-            }
-            return .ignored
+            connectHighlightedNeonBranch()
         }
-        .onChange(of: neonSearch) { _, _ in neonSelectedIndex = -1 }
+        .onChange(of: neonSearch) { _, _ in
+            neonSelectedIndex = -1
+            rebuildNeonSections()
+        }
+        .onChange(of: neonBranchSort) { _, _ in rebuildNeonSections() }
+        .onChange(of: neonBranchSortDescending) { _, _ in rebuildNeonSections() }
+        .onChange(of: state.neonWelcomeProjects) { _, _ in rebuildNeonSections() }
+        .onChange(of: state.neonWelcomeBranches) { _, _ in rebuildNeonSections() }
     }
 
     // MARK: - Left Panel
 
     private var leftPanel: some View {
         VStack(spacing: 0) {
-            Spacer()
-
             VStack(spacing: 24) {
                 VStack(spacing: 8) {
                     Image("DriftLogo")
@@ -318,6 +438,12 @@ struct WelcomeView: View {
                     Text("PostgreSQL Browser")
                         .font(.system(.caption))
                         .foregroundColor(Theme.textSecondary)
+                    if state.isRefreshing {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                            .tint(Theme.accent)
+                            .padding(.top, 4)
+                    }
                 }
 
                 Button {
@@ -332,13 +458,17 @@ struct WelcomeView: View {
                     .frame(width: 180)
                 }
                 .buttonStyle(DriftButtonStyle(isPrimary: true))
-
-                if !state.connections.isEmpty {
-                    recentConnections
-                }
             }
+            .frame(maxWidth: welcomeSidebarContentWidth)
+            .padding(.top, 56)
 
-            Spacer()
+            if !state.connections.isEmpty {
+                savedConnectionsList
+                    .frame(maxWidth: welcomeSidebarContentWidth, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 28)
+            } else {
+                Spacer(minLength: 0)
+            }
 
             if state.isConnecting {
                 ProgressView()
@@ -359,62 +489,135 @@ struct WelcomeView: View {
                     .padding(.bottom, 12)
             }
         }
-        .frame(maxWidth: state.neon.isConfigured ? 340 : .infinity)
+        .frame(maxWidth: state.neon.isConfigured ? welcomeSidebarWidth : .infinity,
+               maxHeight: .infinity,
+               alignment: .top)
         .padding(.horizontal, 24)
+        .padding(.bottom, 24)
     }
 
     private var sortedConnections: [SavedConnection] {
-        Array(state.connections.suffix(9).reversed())
+        Array(state.connections.reversed())
     }
 
-    private var recentConnections: some View {
-        let recentList = Array(sortedConnections)
-        return VStack(alignment: .leading, spacing: 3) {
-            Text("RECENT")
+    private var favoriteConnections: [SavedConnection] {
+        sortedConnections.filter(isFavoriteConnection)
+    }
+
+    private var recentConnectionsOnly: [SavedConnection] {
+        sortedConnections.filter { !isFavoriteConnection($0) }
+    }
+
+    private var shortcutConnections: [SavedConnection] {
+        state.homeShortcutConnections()
+    }
+
+    private var savedConnectionsList: some View {
+        ScrollView(showsIndicators: true) {
+            LazyVStack(alignment: .leading, spacing: 10) {
+                if !favoriteConnections.isEmpty {
+                    savedConnectionsSection(title: "FAVOURITES", connections: favoriteConnections)
+                }
+                if !recentConnectionsOnly.isEmpty {
+                    savedConnectionsSection(title: "RECENT", connections: recentConnectionsOnly)
+                }
+            }
+        }
+        .frame(width: welcomeSidebarContentWidth)
+    }
+
+    private func savedConnectionsSection(title: String, connections: [SavedConnection]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
                 .font(.system(.caption2, weight: .semibold))
                 .foregroundColor(Theme.textTertiary)
                 .padding(.bottom, 2)
 
-            ForEach(Array(recentList.enumerated()), id: \.element.id) { idx, conn in
-                HStack(spacing: 6) {
-                    Button {
-                        Task { await state.connect(to: conn) }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Kbd("\(idx + 1)")
-                            Image(systemName: "cylinder.split.1x2")
-                                .font(.system(.caption2))
-                                .foregroundColor(conn.neonProjectId != nil ? Theme.success : Theme.accent)
-                            Text(conn.displayName)
-                                .font(.system(.caption, weight: .medium))
-                                .foregroundColor(Theme.text)
-                                .lineLimit(1)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button { state.removeConnection(conn) } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 8, weight: .medium))
-                            .foregroundColor(Theme.textTertiary)
-                            .frame(width: 24, height: 24)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+            LazyVStack(alignment: .leading, spacing: 3) {
+                ForEach(connections, id: \.id) { conn in
+                    savedConnectionRow(conn)
                 }
-                .background(Theme.surface)
-                .cornerRadius(Theme.smallRadius)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.smallRadius)
-                        .stroke(Theme.border, lineWidth: 1)
-                )
             }
         }
-        .frame(width: 290)
+    }
+
+    private func savedConnectionRow(_ conn: SavedConnection) -> some View {
+        HStack(spacing: 6) {
+            Button {
+                Task { await state.connect(to: conn) }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: connectionIconName(for: conn))
+                        .font(.system(.caption2))
+                        .foregroundColor(connectionIconColor(for: conn))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(conn.displayName)
+                            .font(.system(.caption, weight: .medium))
+                            .foregroundColor(Theme.text)
+                            .lineLimit(1)
+                        if let created = neonCreatedLabel(for: conn) {
+                            Text(created)
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundColor(Theme.textTertiary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    shortcutBadge(for: conn)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button { state.removeConnection(conn) } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(Theme.textTertiary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .background(Theme.surface)
+        .cornerRadius(Theme.smallRadius)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.smallRadius)
+                .stroke(Theme.border, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func shortcutBadge(for connection: SavedConnection) -> some View {
+        Group {
+            if let shortcutIndex = shortcutConnections.firstIndex(where: { $0.id == connection.id }) {
+                Kbd("⌘\(shortcutIndex + 1)")
+            } else {
+                Color.clear
+            }
+        }
+        .frame(width: 28, height: 20, alignment: .trailing)
+    }
+
+    private func isFavoriteConnection(_ connection: SavedConnection) -> Bool {
+        guard let projectId = connection.neonProjectId,
+              let branchId = connection.neonBranchId else { return false }
+        return state.isNeonBranchStarred(projectId: projectId, branchId: branchId)
+    }
+
+    private func connectionIconName(for connection: SavedConnection) -> String {
+        if isFavoriteConnection(connection) {
+            return "star.fill"
+        }
+        return "cylinder.split.1x2"
+    }
+
+    private func connectionIconColor(for connection: SavedConnection) -> Color {
+        if isFavoriteConnection(connection) {
+            return Theme.warning
+        }
+        return connection.neonProjectId != nil ? Theme.success : Theme.accent
     }
 
     // MARK: - Right Panel (Neon)
@@ -457,6 +660,15 @@ struct WelcomeView: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(Theme.text)
                     .focused($neonSearchFocused)
+                    .onKeyPress(.downArrow) {
+                        handleNeonArrowNavigation(direction: 1)
+                    }
+                    .onKeyPress(.upArrow) {
+                        handleNeonArrowNavigation(direction: -1)
+                    }
+                    .onKeyPress(.return) {
+                        connectHighlightedNeonBranch()
+                    }
                     .onKeyPress(.escape) {
                         neonSearchFocused = false
                         viewFocused = true
@@ -471,62 +683,126 @@ struct WelcomeView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
 
-            Rectangle().fill(Theme.borderSubtle).frame(height: 1)
+            GeometryReader { proxy in
+                ScrollView(.horizontal, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        neonBranchHeader
 
-            // Project list
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(filteredProjects) { project in
-                        neonProjectRow(project)
+                        Rectangle().fill(Theme.borderSubtle).frame(height: 1)
+
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                ForEach(neonSections) { section in
+                                    neonProjectRow(section)
+                                }
+                            }
+                        }
                     }
+                    .frame(
+                        width: max(proxy.size.width, neonTableMinWidth),
+                        height: proxy.size.height,
+                        alignment: .topLeading
+                    )
                 }
             }
         }
         .frame(maxWidth: .infinity)
     }
 
-    private var filteredProjects: [NeonProject] {
-        let all = state.neonWelcomeProjects.sorted { $0.name < $1.name }
-        if neonSearch.isEmpty { return all }
-        // Only show projects that have branches matching the search
-        return all.filter { project in
-            (state.neonWelcomeBranches[project.id] ?? []).contains { $0.name.localizedCaseInsensitiveContains(neonSearch) }
+    private var neonBranchHeader: some View {
+        HStack(spacing: 10) {
+            Color.clear.frame(width: 16, height: 1)
+            neonBranchSortButton(.name, title: "Branch", width: neonBranchNameColumnWidth, alignment: .leading)
+            neonBranchSortButton(.created, title: "Created", width: neonBranchDateColumnWidth, alignment: .leading)
+            neonBranchSortButton(.updated, title: "Updated", width: neonBranchDateColumnWidth, alignment: .leading)
+            Spacer(minLength: 0)
+            Color.clear.frame(width: 28, height: 1)
         }
+        .frame(minWidth: neonTableMinWidth, alignment: .leading)
+        .padding(.horizontal, 32)
+        .padding(.vertical, 6)
+        .background(Theme.surface.opacity(0.55))
     }
 
-    private func neonProjectRow(_ project: NeonProject) -> some View {
+    private func neonBranchSortButton(
+        _ key: NeonBranchSortKey,
+        title: String,
+        width: CGFloat,
+        alignment: Alignment
+    ) -> some View {
+        Button {
+            if neonBranchSort == key {
+                neonBranchSortDescending.toggle()
+            } else {
+                neonBranchSort = key
+                neonBranchSortDescending = key != .name
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.system(.caption2, weight: .semibold))
+                    .foregroundColor(neonBranchSort == key ? Theme.text : Theme.textTertiary)
+                if neonBranchSort == key {
+                    Image(systemName: neonBranchSortDescending ? "arrow.down" : "arrow.up")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(Theme.accent)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(width: width, alignment: alignment)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func neonProjectRow(_ section: NeonProjectSection) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             // Project header
             HStack(spacing: 6) {
                 Image(systemName: "folder")
                     .font(.caption2)
                     .foregroundColor(Theme.textTertiary)
-                Text(project.name)
+                Text(section.project.name)
                     .font(.system(.caption, weight: .medium))
                     .foregroundColor(Theme.text)
                 Spacer()
             }
+            .frame(minWidth: neonTableMinWidth, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.vertical, 6)
 
             // Branches
-            let branches = sortedBranches(for: project)
-            ForEach(branches) { branch in
-                let isHighlighted = isBranchHighlighted(project: project, branch: branch)
-                let isStarred = state.isNeonBranchStarred(projectId: project.id, branchId: branch.id)
+            ForEach(section.branches) { entry in
+                let branch = entry.branch
+                let isHighlighted = isBranchHighlighted(entry)
+                let isStarred = state.isNeonBranchStarred(projectId: section.project.id, branchId: branch.id)
                 HStack(spacing: 0) {
                     Button {
-                        Task { await state.connectToNeonBranch(project: project, branch: branch) }
+                        Task { await state.connectToNeonBranch(project: section.project, branch: branch) }
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 10) {
                             Image(systemName: branch.name == "main" ? "leaf.fill" : "arrow.branch")
                                 .font(.system(.caption2))
                                 .foregroundColor(branch.name == "main" ? Theme.success : Theme.accent)
+                                .frame(width: 16)
                             Text(branch.name)
                                 .font(.system(.caption2, design: .monospaced))
                                 .foregroundColor(isHighlighted ? Theme.text : Theme.textSecondary)
+                                .lineLimit(1)
+                                .frame(width: neonBranchNameColumnWidth, alignment: .leading)
+                            Text(entry.createdLabel)
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundColor(Theme.textTertiary)
+                                .lineLimit(1)
+                                .frame(width: neonBranchDateColumnWidth, alignment: .leading)
+                            Text(entry.updatedLabel)
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundColor(Theme.textTertiary)
+                                .lineLimit(1)
+                                .frame(width: neonBranchDateColumnWidth, alignment: .leading)
                             Spacer()
                         }
+                        .frame(minWidth: neonTableMinWidth - 36, alignment: .leading)
                         .padding(.leading, 32)
                         .padding(.vertical, 4)
                         .contentShape(Rectangle())
@@ -534,7 +810,7 @@ struct WelcomeView: View {
                     .buttonStyle(NeonBranchButtonStyle())
 
                     Button {
-                        state.toggleStarNeonBranch(projectId: project.id, branchId: branch.id)
+                        state.toggleStarNeonBranch(projectId: section.project.id, branchId: branch.id)
                     } label: {
                         Image(systemName: isStarred ? "star.fill" : "star")
                             .font(.system(.caption2))
@@ -545,6 +821,7 @@ struct WelcomeView: View {
                     .buttonStyle(StarButtonStyle())
                     .padding(.trailing, 8)
                 }
+                .frame(minWidth: neonTableMinWidth, alignment: .leading)
                 .background(isHighlighted ? Theme.accent.opacity(0.1) : Color.clear)
             }
 
@@ -552,26 +829,157 @@ struct WelcomeView: View {
         }
     }
 
-    private func sortedBranches(for project: NeonProject) -> [NeonBranch] {
-        var branches = state.neonWelcomeBranches[project.id] ?? []
-        if !neonSearch.isEmpty {
-            branches = branches.filter { $0.name.localizedCaseInsensitiveContains(neonSearch) }
-        }
-        return branches.sorted { a, b in
-            let aStarred = state.isNeonBranchStarred(projectId: project.id, branchId: a.id)
-            let bStarred = state.isNeonBranchStarred(projectId: project.id, branchId: b.id)
-            if aStarred != bStarred { return aStarred }
-            if a.name == "main" { return true }
-            if b.name == "main" { return false }
-            return a.name < b.name
+    private func compareNeonBranchEntries(_ lhs: NeonBranchEntry, _ rhs: NeonBranchEntry) -> Bool {
+        switch neonBranchSort {
+        case .name:
+            let comparison = lhs.branch.name.localizedCaseInsensitiveCompare(rhs.branch.name)
+            if comparison == .orderedSame {
+                return lhs.branch.id < rhs.branch.id
+            }
+            let isAscending = comparison == .orderedAscending
+            return neonBranchSortDescending ? !isAscending : isAscending
+        case .created:
+            return compareNeonDates(
+                lhs: lhs.createdDate,
+                rhs: rhs.createdDate,
+                fallbackLhs: lhs.branch.name,
+                fallbackRhs: rhs.branch.name
+            )
+        case .updated:
+            return compareNeonDates(
+                lhs: lhs.updatedDate,
+                rhs: rhs.updatedDate,
+                fallbackLhs: lhs.branch.name,
+                fallbackRhs: rhs.branch.name
+            )
         }
     }
 
-    private func isBranchHighlighted(project: NeonProject, branch: NeonBranch) -> Bool {
-        let items = allNeonBranches
-        guard neonSelectedIndex >= 0, neonSelectedIndex < items.count else { return false }
-        let sel = items[neonSelectedIndex]
-        return sel.project.id == project.id && sel.branch.id == branch.id
+    private func isBranchHighlighted(_ entry: NeonBranchEntry) -> Bool {
+        highlightedNeonBranch?.id == entry.id
+    }
+
+    private func rebuildNeonSections() {
+        let rebuiltSections = state.neonWelcomeProjects
+            .sorted { $0.name < $1.name }
+            .compactMap { project -> NeonProjectSection? in
+                let rawBranches = state.neonWelcomeBranches[project.id] ?? []
+                let filteredBranches = neonSearch.isEmpty
+                    ? rawBranches
+                    : rawBranches.filter { $0.name.localizedCaseInsensitiveContains(neonSearch) }
+
+                guard !filteredBranches.isEmpty else { return nil }
+
+                let entries = filteredBranches
+                    .map { branch in
+                        let createdDate = parsedNeonDate(branch.created_at)
+                        let updatedDate = parsedNeonDate(branch.updated_at)
+                        return NeonBranchEntry(
+                            project: project,
+                            branch: branch,
+                            createdDate: createdDate,
+                            updatedDate: updatedDate,
+                            createdLabel: formattedNeonDate(createdDate),
+                            updatedLabel: formattedNeonDate(updatedDate)
+                        )
+                    }
+                    .sorted(by: compareNeonBranchEntries)
+
+                return NeonProjectSection(project: project, branches: entries)
+            }
+
+        neonSections = rebuiltSections
+        allNeonBranches = rebuiltSections.flatMap(\.branches)
+        if allNeonBranches.isEmpty {
+            neonSelectedIndex = -1
+        } else if neonSelectedIndex >= allNeonBranches.count {
+            neonSelectedIndex = allNeonBranches.count - 1
+        }
+    }
+
+    private func routeTypedCharacterToNeonSearch(_ press: KeyPress) -> KeyPress.Result {
+        guard state.neon.isConfigured else { return .ignored }
+
+        let blockedModifiers: EventModifiers = [.command, .control, .option]
+        guard press.modifiers.intersection(blockedModifiers).isEmpty else { return .ignored }
+        guard !neonSearchFocused else { return .ignored }
+
+        let typed = press.characters
+        guard !typed.isEmpty else { return .ignored }
+
+        DispatchQueue.main.async {
+            neonSelectedIndex = -1
+            neonSearchFocused = true
+            viewFocused = false
+            neonSearch.append(typed)
+        }
+        return .handled
+    }
+
+    private func handleNeonArrowNavigation(direction: Int) -> KeyPress.Result {
+        guard !allNeonBranches.isEmpty else { return .ignored }
+        DispatchQueue.main.async {
+            neonSearchFocused = false
+            viewFocused = true
+            if direction > 0 {
+                neonSelectedIndex = min(neonSelectedIndex + 1, allNeonBranches.count - 1)
+            } else {
+                neonSelectedIndex = max(-1, neonSelectedIndex - 1)
+            }
+        }
+        return .handled
+    }
+
+    private func connectHighlightedNeonBranch() -> KeyPress.Result {
+        guard let item = highlightedNeonBranch else { return .ignored }
+        Task { await state.connectToNeonBranch(project: item.project, branch: item.branch) }
+        return .handled
+    }
+
+    private func neonCreatedLabel(for connection: SavedConnection) -> String? {
+        guard let projectId = connection.neonProjectId,
+              let branchId = connection.neonBranchId,
+              let branch = state.neonWelcomeBranches[projectId]?.first(where: { $0.id == branchId }) else {
+            return nil
+        }
+        let created = parsedNeonDate(branch.created_at)
+        guard created != nil else { return nil }
+        return "Created \(formattedNeonDate(created))"
+    }
+
+    private func formattedNeonDate(_ date: Date?) -> String {
+        guard let date else { return "—" }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private func compareNeonDates(lhs: Date?, rhs: Date?, fallbackLhs: String, fallbackRhs: String) -> Bool {
+        switch (lhs, rhs) {
+        case let (l?, r?):
+            if l == r {
+                return fallbackStringComparison(lhs: fallbackLhs, rhs: fallbackRhs)
+            }
+            return neonBranchSortDescending ? l > r : l < r
+        case (_?, nil):
+            return true
+        case (nil, _?):
+            return false
+        case (nil, nil):
+            return fallbackStringComparison(lhs: fallbackLhs, rhs: fallbackRhs)
+        }
+    }
+
+    private func fallbackStringComparison(lhs: String, rhs: String) -> Bool {
+        let comparison = lhs.localizedCaseInsensitiveCompare(rhs)
+        if comparison == .orderedSame {
+            return lhs < rhs
+        }
+        let isAscending = comparison == .orderedAscending
+        return neonBranchSortDescending ? !isAscending : isAscending
+    }
+
+    private func parsedNeonDate(_ isoString: String?) -> Date? {
+        guard let isoString else { return nil }
+        return neonDateFormatter.date(from: isoString)
     }
 }
 

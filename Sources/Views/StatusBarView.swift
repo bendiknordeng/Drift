@@ -13,6 +13,9 @@ struct StatusBarView: View {
                 Text(state.isConnected ? (state.activeConnection?.displayName ?? "Connected") : "Disconnected")
                     .font(Theme.monoSmall)
                     .foregroundColor(Theme.textSecondary)
+                if state.isRefreshing {
+                    DriftSpinner(size: 10, lineWidth: 1.75)
+                }
             }
 
             if let ref = state.selectedTable {
@@ -21,12 +24,6 @@ struct StatusBarView: View {
                 Text(ref.fullName)
                     .font(Theme.monoSmall)
                     .foregroundColor(Theme.textSecondary)
-
-                if let cols = state.tableColumns[ref] {
-                    Text("\(cols.count) columns")
-                        .font(Theme.monoSmall)
-                        .foregroundColor(Theme.textTertiary)
-                }
             }
 
             Spacer()

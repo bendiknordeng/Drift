@@ -8,7 +8,7 @@ struct SettingsView: View {
     @State private var selectedTab = 0
     @FocusState private var viewFocused: Bool
 
-    private let tabs = ["Integrations", "Shortcuts", "About"]
+    private let tabs = ["Appearance", "Integrations", "Shortcuts", "About"]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,8 +56,9 @@ struct SettingsView: View {
             // Content
             Group {
                 switch selectedTab {
-                case 0: integrationsTab
-                case 1: shortcutsTab
+                case 0: appearanceTab
+                case 1: integrationsTab
+                case 2: shortcutsTab
                 default: aboutTab
                 }
             }
@@ -78,6 +79,11 @@ struct SettingsView: View {
             state.showSettings = false
             return .handled
         }
+        .onKeyPress(.escape, phases: .down) { press in
+            guard press.modifiers.contains(.command), state.isConnected else { return .ignored }
+            Task { await state.goHome() }
+            return .handled
+        }
         .onKeyPress(.tab) {
             selectedTab = (selectedTab + 1) % tabs.count
             return .handled
@@ -88,6 +94,42 @@ struct SettingsView: View {
             neonKey = state.store.neonAPIKey
             llmModel = state.llm.model
         }
+    }
+
+    // MARK: - Appearance
+
+    private var appearanceTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 6) {
+                    Image(systemName: "circle.lefthalf.filled")
+                        .font(.caption)
+                        .foregroundColor(Theme.accent)
+                    Text("Appearance")
+                        .font(.system(.caption, weight: .semibold))
+                        .foregroundColor(Theme.text)
+                }
+
+                Picker("Theme", selection: $state.appearance) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text("Drift starts in dark mode by default. Your selection is saved and applied across the app immediately.")
+                    .font(.system(.caption))
+                    .foregroundColor(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .background(Theme.surface)
+            .cornerRadius(8)
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+
+            Spacer()
+        }
+        .padding(20)
     }
 
     // MARK: - Integrations
@@ -225,12 +267,16 @@ struct SettingsView: View {
 
     private var shortcuts: [(label: String, shortcut: String)] {
         [
+            ("Go Home", "⌘H"),
+            ("Open Home Connection", "⌘1-9"),
             ("Quick Open", "⌘P"),
             ("Search Values", "⌘⇧F"),
             ("AI Query", "⌘K"),
-            ("SQL Editor", "⌘⇧E"),
-            ("Table Browser", "⌘⇧B"),
+            ("SQL Editor", "⌘E"),
+            ("SQL Snippets", "⌘1-6"),
+            ("Table Browser", "⌘B"),
             ("Execute SQL", "⌘⏎"),
+            ("Refresh", "⌘R"),
             ("New Connection", "⌘N"),
             ("Navigate Back", "⌘←"),
             ("Navigate Forward", "⌘→"),
@@ -262,14 +308,21 @@ struct SettingsView: View {
 // MARK: - Kbd Component (shadcn-inspired)
 
 struct Kbd: View {
-    let keys: [String]
+    enum Variant {
+        case standard
+        case primary
+    }
 
-    init(_ shortcut: String) {
+    let keys: [String]
+    let variant: Variant
+
+    init(_ shortcut: String, variant: Variant = .standard) {
         var result: [String] = []
         for char in shortcut {
             result.append(String(char))
         }
         self.keys = result
+        self.variant = variant
     }
 
     var body: some View {
@@ -277,7 +330,7 @@ struct Kbd: View {
             ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
                 Text(key)
                     .font(.system(.caption, design: .rounded).weight(.medium))
-                    .foregroundColor(Theme.textSecondary)
+                    .foregroundColor(textColor)
                     .frame(minWidth: 14, minHeight: 14)
             }
         }
@@ -285,11 +338,38 @@ struct Kbd: View {
         .padding(.vertical, 3)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(Theme.surface)
+                .fill(backgroundColor)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 4)
-                .stroke(Theme.border, lineWidth: 1)
+                .stroke(borderColor, lineWidth: 1)
         )
+    }
+
+    private var textColor: Color {
+        switch variant {
+        case .standard:
+            return Theme.textSecondary
+        case .primary:
+            return Color.white.opacity(0.92)
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch variant {
+        case .standard:
+            return Theme.surface
+        case .primary:
+            return Color.white.opacity(0.12)
+        }
+    }
+
+    private var borderColor: Color {
+        switch variant {
+        case .standard:
+            return Theme.border
+        case .primary:
+            return Color.white.opacity(0.18)
+        }
     }
 }

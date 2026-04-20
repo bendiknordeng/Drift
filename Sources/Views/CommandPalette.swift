@@ -11,11 +11,36 @@ struct CommandPalette: View {
             schema.tables.map { (schema: schema.name, table: $0) }
         }
         if query.isEmpty { return allTables }
-        return allTables.filter { item in
-            let full = "\(item.schema).\(item.table)"
-            return full.localizedCaseInsensitiveContains(query) ||
-                   item.table.localizedCaseInsensitiveContains(query)
-        }
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedQuery.isEmpty else { return allTables }
+
+        return allTables
+            .compactMap { item -> (item: (schema: String, table: String), rank: Int, tableLength: Int, fullLength: Int)? in
+                let tableName = item.table.lowercased()
+                let fullName = "\(item.schema).\(item.table)".lowercased()
+
+                if tableName.hasPrefix(normalizedQuery) {
+                    return (item, 0, item.table.count, fullName.count)
+                }
+                if tableName.contains(normalizedQuery) {
+                    return (item, 1, item.table.count, fullName.count)
+                }
+                if fullName.hasPrefix(normalizedQuery) {
+                    return (item, 2, item.table.count, fullName.count)
+                }
+                if fullName.contains(normalizedQuery) {
+                    return (item, 3, item.table.count, fullName.count)
+                }
+                return nil
+            }
+            .sorted { lhs, rhs in
+                if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
+                if lhs.tableLength != rhs.tableLength { return lhs.tableLength < rhs.tableLength }
+                if lhs.fullLength != rhs.fullLength { return lhs.fullLength < rhs.fullLength }
+                if lhs.item.table != rhs.item.table { return lhs.item.table < rhs.item.table }
+                return lhs.item.schema < rhs.item.schema
+            }
+            .map(\.item)
     }
 
     var body: some View {
@@ -91,6 +116,11 @@ struct CommandPalette: View {
             state.showCommandPalette = false
             return .handled
         }
+        .onKeyPress(.escape, phases: .down) { press in
+            guard press.modifiers.contains(.command), state.isConnected else { return .ignored }
+            Task { await state.goHome() }
+            return .handled
+        }
     }
 
     private func resultRow(item: (schema: String, table: String), index: Int) -> some View {
@@ -113,12 +143,6 @@ struct CommandPalette: View {
                     .foregroundColor(Theme.text)
 
                 Spacer()
-
-                if let cols = state.tableColumns[TableRef(schema: item.schema, table: item.table)] {
-                    Text("\(cols.count) cols")
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundColor(Theme.textTertiary)
-                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)

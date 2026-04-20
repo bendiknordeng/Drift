@@ -7,9 +7,16 @@ struct NSDataGridView: NSViewRepresentable {
     @Binding var selectedCells: Set<CellAddress>
     @Binding var anchorCell: CellAddress?
     @Binding var columnWidths: [String: CGFloat]
-    let onSort: (String) -> Void
-    let onLoadMore: () -> Void
-    let truncated: Bool
+    var onSort: ((String) -> Void)? = nil
+    var onLoadMore: (() -> Void)? = nil
+    var truncated: Bool = false
+    var registerForBrowserKeyboardMonitor = false
+    var focusRequestID: Int = 0
+    var highlightQuery: String = ""
+    var onEscape: (() -> Void)? = nil
+    var onExitUpFromFirstRow: (() -> Void)? = nil
+    var onCommandEscape: (() -> Void)? = nil
+    var uiScale: CGFloat = 1.0
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -19,14 +26,15 @@ struct NSDataGridView: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
+        ScrollChrome.apply(to: scrollView)
 
         let tableView = DriftCellTableView()
         tableView.style = .plain
-        tableView.backgroundColor = NSColor(red: 0.05, green: 0.05, blue: 0.07, alpha: 1.0)
+        tableView.backgroundColor = Theme.nsBg
         tableView.rowHeight = 26
         tableView.intercellSpacing = NSSize(width: 0, height: 0)
         tableView.gridStyleMask = [.solidHorizontalGridLineMask]
-        tableView.gridColor = NSColor(red: 0.12, green: 0.12, blue: 0.20, alpha: 1.0)
+        tableView.gridColor = Theme.nsBorderSubtle
         tableView.allowsMultipleSelection = false
         tableView.allowsEmptySelection = true
         tableView.allowsColumnSelection = false
@@ -39,22 +47,48 @@ struct NSDataGridView: NSViewRepresentable {
         scrollView.documentView = tableView
         context.coordinator.tableView = tableView
         context.coordinator.scrollView = scrollView
+        if registerForBrowserKeyboardMonitor {
+            KeyboardMonitor.shared.registerBrowserGrid(tableView)
+        }
         context.coordinator.buildColumns(for: data)
         tableView.reloadData()
+        context.coordinator.lastDataID = data.id
+        context.coordinator.lastRowCount = data.rows.count
+        context.coordinator.lastFocusRequestID = focusRequestID
+        context.coordinator.lastHighlightQuery = highlightQuery
+        context.coordinator.lastColorScheme = context.environment.colorScheme
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let tableView = scrollView.documentView as? DriftCellTableView else { return }
+        ScrollChrome.apply(to: scrollView)
+        if registerForBrowserKeyboardMonitor {
+            KeyboardMonitor.shared.registerBrowserGrid(tableView)
+        }
+        tableView.backgroundColor = Theme.nsBg
+        tableView.gridColor = Theme.nsBorderSubtle
 
         let colNames = data.columns.map(\.name)
         if context.coordinator.lastColumnNames != colNames {
             context.coordinator.buildColumns(for: data)
             tableView.reloadData()
-        } else if context.coordinator.lastRowCount != data.rows.count {
-            tableView.reloadData()
+            context.coordinator.lastDataID = data.id
             context.coordinator.lastRowCount = data.rows.count
+            context.coordinator.lastHighlightQuery = highlightQuery
+            context.coordinator.lastColorScheme = context.environment.colorScheme
+        } else if context.coordinator.lastDataID != data.id || context.coordinator.lastRowCount != data.rows.count {
+            tableView.reloadData()
+            context.coordinator.lastDataID = data.id
+            context.coordinator.lastRowCount = data.rows.count
+            context.coordinator.lastHighlightQuery = highlightQuery
+            context.coordinator.lastColorScheme = context.environment.colorScheme
+        } else if context.coordinator.lastHighlightQuery != highlightQuery ||
+                    context.coordinator.lastColorScheme != context.environment.colorScheme {
+            tableView.reloadData()
+            context.coordinator.lastHighlightQuery = highlightQuery
+            context.coordinator.lastColorScheme = context.environment.colorScheme
         }
 
         // Scroll to anchor cell
@@ -72,6 +106,11 @@ struct NSDataGridView: NSViewRepresentable {
                 }
             }
         }
+
+        if context.coordinator.lastFocusRequestID != focusRequestID {
+            context.coordinator.lastFocusRequestID = focusRequestID
+            scrollView.window?.makeFirstResponder(tableView)
+        }
     }
 
     class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
@@ -80,7 +119,11 @@ struct NSDataGridView: NSViewRepresentable {
         weak var scrollView: NSScrollView?
         var lastColumnNames: [String] = []
         var lastRowCount: Int = -1
+        var lastDataID: QueryResultData.ID?
         var lastScrolledCell: CellAddress?
+        var lastFocusRequestID: Int = 0
+        var lastHighlightQuery: String = ""
+        var lastColorScheme: ColorScheme?
         var dragStart: CellAddress?
         var selectionOrigin: CellAddress?
         var copyFlash = false
@@ -132,15 +175,58 @@ struct NSDataGridView: NSViewRepresentable {
 
         func numberOfRows(in tableView: NSTableView) -> Int { parent.data.rows.count }
 
+        private func applyValue(_ value: String?, to cell: DriftCellView) {
+            if let value {
+                if parent.highlightQuery.isEmpty {
+                    cell.label.stringValue = value
+                    cell.label.attributedStringValue = NSAttributedString(string: value, attributes: [
+                        .foregroundColor: Theme.nsText,
+                        .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                    ])
+                } else if let range = value.range(of: parent.highlightQuery, options: .caseInsensitive) {
+                    let attributed = NSMutableAttributedString(string: value, attributes: [
+                        .foregroundColor: Theme.nsText,
+                        .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                    ])
+                    let nsRange = NSRange(range, in: value)
+                    attributed.addAttributes([
+                        .foregroundColor: Theme.nsAccent,
+                        .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold)
+                    ], range: nsRange)
+                    cell.label.attributedStringValue = attributed
+                } else {
+                    cell.label.stringValue = value
+                    cell.label.attributedStringValue = NSAttributedString(string: value, attributes: [
+                        .foregroundColor: Theme.nsText,
+                        .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                    ])
+                }
+                cell.label.textColor = Theme.nsText
+            } else {
+                cell.label.attributedStringValue = NSAttributedString(string: "NULL", attributes: [
+                    .foregroundColor: Theme.nsTextSecondary,
+                    .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                ])
+                cell.label.textColor = Theme.nsTextSecondary
+            }
+        }
+
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
             guard let colId = tableColumn?.identifier.rawValue else { return nil }
-            let cell = DriftCellView()
+            let identifier = NSUserInterfaceItemIdentifier(colId == "__row" ? "__row_cell" : "__data_cell")
+            let cell = (tableView.makeView(withIdentifier: identifier, owner: nil) as? DriftCellView) ?? DriftCellView()
+            cell.identifier = identifier
 
             if colId == "__row" {
                 cell.label.stringValue = "\(row + 1)"
-                cell.label.textColor = NSColor(red: 0.47, green: 0.47, blue: 0.6, alpha: 1.0)
+                cell.label.attributedStringValue = NSAttributedString(string: "\(row + 1)", attributes: [
+                    .foregroundColor: Theme.nsTextSecondary,
+                    .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                ])
+                cell.label.textColor = Theme.nsTextSecondary
                 cell.label.alignment = .center
                 cell.isSelected = false
+                cell.isFlashing = false
                 cell.coordinator = self
                 cell.colIndex = -1  // row number column
                 cell.rowIndex = row
@@ -148,13 +234,7 @@ struct NSDataGridView: NSViewRepresentable {
                 let colIdx = parent.data.columns.firstIndex { $0.name == colId } ?? 0
                 let val = (row < parent.data.rows.count && colIdx < parent.data.rows[row].count)
                     ? parent.data.rows[row][colIdx] : nil
-                if let val {
-                    cell.label.stringValue = val
-                    cell.label.textColor = NSColor(red: 0.89, green: 0.89, blue: 0.92, alpha: 1.0)
-                } else {
-                    cell.label.stringValue = "NULL"
-                    cell.label.textColor = NSColor(red: 0.47, green: 0.47, blue: 0.6, alpha: 1.0)
-                }
+                applyValue(val, to: cell)
                 cell.label.alignment = .left
                 let addr = CellAddress(row: row, col: colIdx)
                 cell.isSelected = parent.selectedCells.contains(addr)
@@ -166,7 +246,7 @@ struct NSDataGridView: NSViewRepresentable {
 
             // Infinite scroll trigger
             if row == parent.data.rows.count - 5 && parent.truncated {
-                DispatchQueue.main.async { self.parent.onLoadMore() }
+                DispatchQueue.main.async { self.parent.onLoadMore?() }
             }
             return cell
         }
@@ -183,8 +263,9 @@ struct NSDataGridView: NSViewRepresentable {
         func tableView(_ tableView: NSTableView, didClick tableColumn: NSTableColumn) {
             let name = tableColumn.identifier.rawValue
             guard name != "__row" else { return }
+            guard let onSort = parent.onSort else { return }
             DispatchQueue.main.async {
-                self.parent.onSort(name)
+                onSort(name)
             }
         }
 
@@ -269,17 +350,21 @@ struct NSDataGridView: NSViewRepresentable {
 
         // MARK: - Arrow Navigation
 
-        func moveSelection(dRow: Int, dCol: Int, shift: Bool) {
-            guard !parent.data.columns.isEmpty else { return }
-            let current = parent.anchorCell ?? CellAddress(row: 0, col: 0)
-            let maxRow = parent.data.rows.count - 1
-            let maxCol = parent.data.columns.count - 1
-            let newRow = max(0, min(maxRow, current.row + dRow))
-            let newCol = max(0, min(maxCol, current.col + dCol))
-            let addr = CellAddress(row: newRow, col: newCol)
+        private func scrollToCell(_ cell: CellAddress) {
+            guard let tv = tableView else { return }
+            tv.scrollRowToVisible(cell.row)
+            let colIndex = cell.col + 1
+            if colIndex < tv.tableColumns.count {
+                var rect = tv.rect(ofColumn: colIndex)
+                rect.size.height = tv.rowHeight
+                rect.origin.y = CGFloat(cell.row) * tv.rowHeight
+                tv.scrollToVisible(rect)
+            }
+        }
 
+        private func select(_ addr: CellAddress, shift: Bool) {
             if shift {
-                let origin = selectionOrigin ?? current
+                let origin = selectionOrigin ?? parent.anchorCell ?? addr
                 let minR = min(origin.row, addr.row), maxR = max(origin.row, addr.row)
                 let minC = min(origin.col, addr.col), maxC = max(origin.col, addr.col)
                 var s: Set<CellAddress> = []
@@ -289,19 +374,61 @@ struct NSDataGridView: NSViewRepresentable {
                 parent.selectedCells = [addr]
                 selectionOrigin = addr
             }
-            parent.anchorCell = addr
 
-            if let tv = tableView {
-                tv.scrollRowToVisible(newRow)
-                let colIdx = newCol + 1
-                if colIdx < tv.tableColumns.count {
-                    var rect = tv.rect(ofColumn: colIdx)
-                    rect.size.height = tv.rowHeight
-                    rect.origin.y = CGFloat(newRow) * tv.rowHeight
-                    tv.scrollToVisible(rect)
-                }
-                refreshSelectionDisplay()
+            parent.anchorCell = addr
+            scrollToCell(addr)
+            refreshSelectionDisplay()
+        }
+
+        func moveSelection(dRow: Int, dCol: Int, shift: Bool, jumpToEdge: Bool = false) {
+            guard !parent.data.columns.isEmpty, !parent.data.rows.isEmpty else { return }
+
+            let initial = CellAddress(row: 0, col: 0)
+            if parent.anchorCell == nil && !shift && !jumpToEdge {
+                select(initial, shift: false)
+                return
             }
+
+            let current = parent.anchorCell ?? initial
+            let maxRow = parent.data.rows.count - 1
+            let maxCol = parent.data.columns.count - 1
+            if dRow < 0 && current.row == 0 && !shift && !jumpToEdge {
+                parent.onExitUpFromFirstRow?()
+                return
+            }
+            let newRow: Int
+            if jumpToEdge && dRow != 0 {
+                newRow = dRow < 0 ? 0 : maxRow
+            } else {
+                newRow = max(0, min(maxRow, current.row + dRow))
+            }
+
+            let newCol: Int
+            if jumpToEdge && dCol != 0 {
+                newCol = dCol < 0 ? 0 : maxCol
+            } else {
+                newCol = max(0, min(maxCol, current.col + dCol))
+            }
+
+            let addr = CellAddress(row: newRow, col: newCol)
+            select(addr, shift: shift)
+        }
+
+        func selectAllCells() {
+            guard !parent.data.columns.isEmpty, !parent.data.rows.isEmpty else { return }
+
+            var allCells: Set<CellAddress> = []
+            for row in 0..<parent.data.rows.count {
+                for col in 0..<parent.data.columns.count {
+                    allCells.insert(CellAddress(row: row, col: col))
+                }
+            }
+
+            parent.selectedCells = allCells
+            let anchor = parent.anchorCell ?? CellAddress(row: 0, col: 0)
+            parent.anchorCell = anchor
+            selectionOrigin = CellAddress(row: 0, col: 0)
+            refreshSelectionDisplay()
         }
 
         // MARK: - Copy
@@ -373,8 +500,8 @@ class DriftCellView: NSView {
         super.draw(dirtyRect)
         if isSelected {
             let color = isFlashing
-                ? NSColor(red: 0.37, green: 0.42, blue: 0.82, alpha: 0.5)
-                : NSColor(red: 0.37, green: 0.42, blue: 0.82, alpha: 0.25)
+                ? Theme.nsAccent.withAlphaComponent(0.5)
+                : Theme.nsAccent.withAlphaComponent(0.25)
             color.setFill()
             bounds.fill()
         }
@@ -399,7 +526,7 @@ class DriftCellView: NSView {
         guard let coord = coordinator, colIndex >= 0 else { return }
         // Convert window coordinates to table view coordinates
         guard let tv = coord.tableView else { return }
-        let pointInTable = tv.convert(event.locationInWindow, from: nil)
+        let pointInTable = adjustedPointInTable(for: event, tableView: tv)
         let rowAt = tv.row(at: pointInTable)
         let colAt = tv.column(at: pointInTable)
         if rowAt >= 0, colAt >= 1 {
@@ -409,6 +536,10 @@ class DriftCellView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         coordinator?.endDrag()
+    }
+
+    private func adjustedPointInTable(for event: NSEvent, tableView: NSTableView) -> NSPoint {
+        tableView.convert(event.locationInWindow, from: nil)
     }
 }
 
@@ -439,14 +570,57 @@ class DriftCellTableView: NSTableView {
         let cmd = event.modifierFlags.contains(.command)
 
         switch event.keyCode {
-        case 126: coordinator?.moveSelection(dRow: -1, dCol: 0, shift: shift); return
-        case 125: coordinator?.moveSelection(dRow: 1, dCol: 0, shift: shift); return
-        case 123: coordinator?.moveSelection(dRow: 0, dCol: -1, shift: shift); return
-        case 124: coordinator?.moveSelection(dRow: 0, dCol: 1, shift: shift); return
+        case 53:
+            if isGoHomeShortcut(event), let onCommandEscape = coordinator?.parent.onCommandEscape {
+                onCommandEscape()
+                return
+            }
+            if let onEscape = coordinator?.parent.onEscape {
+                onEscape()
+                return
+            }
+        case 126: coordinator?.moveSelection(dRow: -1, dCol: 0, shift: shift, jumpToEdge: cmd); return
+        case 125: coordinator?.moveSelection(dRow: 1, dCol: 0, shift: shift, jumpToEdge: cmd); return
+        case 123: coordinator?.moveSelection(dRow: 0, dCol: -1, shift: shift, jumpToEdge: cmd); return
+        case 124: coordinator?.moveSelection(dRow: 0, dCol: 1, shift: shift, jumpToEdge: cmd); return
+        case 0:   // A
+            if cmd { coordinator?.selectAllCells(); return }
         case 8:   // C
             if cmd { coordinator?.copySelection(); return }
         default: break
         }
         super.keyDown(with: event)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if isGoHomeShortcut(event), let onCommandEscape = coordinator?.parent.onCommandEscape {
+            onCommandEscape()
+            return true
+        }
+        if isGridNavigationShortcut(event) {
+            keyDown(with: event)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private func isGoHomeShortcut(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        return modifiers == [.command] && (event.keyCode == 4 || event.keyCode == 53)
+    }
+
+    private func isGridNavigationShortcut(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard modifiers == [.command] || modifiers == [.command, .shift] else { return false }
+        switch event.keyCode {
+        case 123, 124, 125, 126:
+            return true
+        default:
+            return false
+        }
+    }
+
+    override func selectAll(_ sender: Any?) {
+        coordinator?.selectAllCells()
     }
 }

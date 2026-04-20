@@ -31,6 +31,11 @@ struct LLMChatView: View {
             state.showLLMChat = false
             return .handled
         }
+        .onKeyPress(.escape, phases: .down) { press in
+            guard press.modifiers.contains(.command), state.isConnected else { return .ignored }
+            Task { await state.goHome() }
+            return .handled
+        }
     }
 
     private var chatHeader: some View {

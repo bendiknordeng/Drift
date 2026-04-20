@@ -19,6 +19,30 @@ struct SavedConnection: Identifiable, Codable, Hashable {
         return "\(database)@\(host)"
     }
 
+    var recentsIdentityKey: String {
+        let normalizedDatabase = database.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        if let neonProjectId, let neonBranchId {
+            return [
+                "neon",
+                neonProjectId,
+                neonBranchId,
+                normalizedDatabase,
+                normalizedUsername
+            ].joined(separator: "|")
+        }
+
+        return [
+            "direct",
+            host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+            String(port),
+            normalizedDatabase,
+            normalizedUsername,
+            useSSL ? "ssl" : "plain"
+        ].joined(separator: "|")
+    }
+
     var connectionString: String {
         let ssl = useSSL ? "?sslmode=require" : ""
         let pass = password.isEmpty ? "" : ":\(password)"
@@ -126,6 +150,8 @@ struct NeonBranch: Identifiable, Codable, Hashable {
     let name: String
     let parent_id: String?
     let current_state: String?
+    let created_at: String?
+    let updated_at: String?
 }
 
 struct NeonDatabase: Identifiable, Codable, Hashable {

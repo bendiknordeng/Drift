@@ -5,6 +5,11 @@ import NIOSSL
 import Logging
 
 final class PostgresService: @unchecked Sendable {
+    struct SchemaMetadata {
+        let schemas: [SchemaInfo]
+        let columnsByTable: [TableRef: [TableColumn]]
+    }
+
     private var connection: PostgresConnection?
     private let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 2)
     private let logger = Logger(label: "drift.postgres")
@@ -74,6 +79,85 @@ final class PostgresService: @unchecked Sendable {
             }
         }
         return schemas
+    }
+
+    func fetchSchemaMetadata() async throws -> SchemaMetadata {
+        let tablesResult = try await executeRaw(
+            """
+            SELECT table_schema, table_name
+            FROM information_schema.tables
+            WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+              AND table_type = 'BASE TABLE'
+            ORDER BY table_schema, table_name
+            """
+        )
+
+        let columnsResult = try await executeRaw(
+            """
+            SELECT
+              c.table_schema,
+              c.table_name,
+              c.column_name,
+              c.data_type,
+              c.is_nullable,
+              c.ordinal_position,
+              CASE WHEN pk.column_name IS NOT NULL THEN 'YES' ELSE 'NO' END AS is_primary_key
+            FROM information_schema.columns c
+            LEFT JOIN (
+              SELECT DISTINCT
+                kcu.table_schema,
+                kcu.table_name,
+                kcu.column_name
+              FROM information_schema.table_constraints tc
+              JOIN information_schema.key_column_usage kcu
+                ON tc.constraint_name = kcu.constraint_name
+               AND tc.table_schema = kcu.table_schema
+               AND tc.table_name = kcu.table_name
+              WHERE tc.constraint_type = 'PRIMARY KEY'
+            ) pk
+              ON c.table_schema = pk.table_schema
+             AND c.table_name = pk.table_name
+             AND c.column_name = pk.column_name
+            WHERE c.table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+            ORDER BY c.table_schema, c.table_name, c.ordinal_position
+            """
+        )
+
+        var tablesBySchema: [String: [String]] = [:]
+        for row in tablesResult.rows {
+            guard row.count >= 2,
+                  let schema = row[0],
+                  let table = row[1] else { continue }
+            tablesBySchema[schema, default: []].append(table)
+        }
+
+        var columnsByTable: [TableRef: [TableColumn]] = [:]
+        for row in columnsResult.rows {
+            guard row.count >= 7,
+                  let schema = row[0],
+                  let table = row[1],
+                  let name = row[2],
+                  let dataType = row[3] else { continue }
+
+            let ref = TableRef(schema: schema, table: table)
+            let column = TableColumn(
+                name: name,
+                dataType: dataType,
+                isNullable: row[4] == "YES",
+                isPrimaryKey: row[6] == "YES",
+                ordinalPosition: Int(row[5] ?? "0") ?? 0
+            )
+            columnsByTable[ref, default: []].append(column)
+        }
+
+        let schemas = tablesBySchema
+            .keys
+            .sorted()
+            .map { schemaName in
+                SchemaInfo(name: schemaName, tables: tablesBySchema[schemaName] ?? [])
+            }
+
+        return SchemaMetadata(schemas: schemas, columnsByTable: columnsByTable)
     }
 
     func fetchColumns(schema: String, table: String) async throws -> [TableColumn] {

@@ -37,16 +37,21 @@
 | `⌘P` | Quick open (fuzzy table search) |
 | `⌘⇧F` | Global value search |
 | `⌘K` | AI query (Claude API) |
-| `⌘⇧E` | SQL editor |
-| `⌘⇧B` | Table browser |
+| `⌘E` | SQL editor |
+| `⌘B` | Table browser |
 | `⌘N` | New connection |
+| `⌘1-9` | Open favourited/recent connection from home |
 | `⌘⏎` | Execute SQL |
+| `⌘R` | Refresh current context |
 | `⌘C` | Copy selected cells |
-| `⌘Esc` | Go home |
-| `⌘[` / `⌘]` | Navigate back/forward |
-| `⌘=` / `⌘-` | Zoom in/out |
+| `⌘A` | Select all loaded cells |
+| `⌘H` | Go home |
+| `⌘←` | Navigate back |
+| `⌘+` / `⌘-` | Zoom in/out |
 | `Arrow keys` | Navigate cells |
 | `Shift+Arrows` | Extend selection |
+| `⌘+Arrows` | Jump to edge in that direction |
+| `⌘⇧+Arrows` | Extend selection to edge |
 
 ## Getting Started
 
@@ -68,6 +73,25 @@ swift run Drift
 # Or open in Xcode
 open Package.swift
 ```
+
+### Release PKG
+
+GitHub Actions builds an Apple Silicon installer package on every `v*` tag and from manual workflow dispatch:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow publishes `Drift-<version>-arm64.pkg` to the GitHub Release. The package installs `Drift.app` into `/Applications`.
+
+You can also build the package locally:
+
+```bash
+VERSION=0.1.0 BUILD_NUMBER=1 ARCH=arm64 scripts/package-macos.sh
+```
+
+The local output is written to `dist/`.
 
 ### Connect to a Database
 
