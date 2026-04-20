@@ -83,7 +83,21 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow publishes `Drift-<version>-arm64.pkg` to the GitHub Release. The package installs `Drift.app` into `/Applications`.
+The workflow signs, notarizes, staples, and publishes `Drift-<version>-arm64.pkg` to the GitHub Release. The package installs `Drift.app` into `/Applications`.
+
+The release workflow requires these repository secrets:
+
+| Secret | Description |
+|---|---|
+| `APPLE_DEVELOPER_ID_APP_CERTIFICATE_BASE64` | Base64-encoded `.p12` for the Developer ID Application certificate |
+| `APPLE_DEVELOPER_ID_APP_CERTIFICATE_PASSWORD` | Password for the Developer ID Application `.p12` |
+| `APPLE_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64` | Base64-encoded `.p12` for the Developer ID Installer certificate |
+| `APPLE_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD` | Password for the Developer ID Installer `.p12` |
+| `APPLE_DEVELOPER_ID_APP_IDENTITY` | Exact signing identity, e.g. `Developer ID Application: Name (TEAMID)` |
+| `APPLE_DEVELOPER_ID_INSTALLER_IDENTITY` | Exact signing identity, e.g. `Developer ID Installer: Name (TEAMID)` |
+| `APPLE_NOTARY_KEY_BASE64` | Base64-encoded App Store Connect API private key `.p8` |
+| `APPLE_NOTARY_KEY_ID` | App Store Connect API key ID |
+| `APPLE_NOTARY_ISSUER_ID` | App Store Connect issuer ID |
 
 You can also build the package locally:
 
@@ -91,7 +105,7 @@ You can also build the package locally:
 VERSION=0.1.0 BUILD_NUMBER=1 ARCH=arm64 scripts/package-macos.sh
 ```
 
-The local output is written to `dist/`.
+The local output is written to `dist/`. Without Developer ID identities, local packages are only ad-hoc signed and will trigger Gatekeeper warnings.
 
 ### Connect to a Database
 

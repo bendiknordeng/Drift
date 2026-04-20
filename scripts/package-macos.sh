@@ -7,6 +7,13 @@ VERSION="${VERSION:-0.0.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-0}"
 ARCH="${ARCH:-arm64}"
 MIN_MACOS_VERSION="${MIN_MACOS_VERSION:-14.0}"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
+INSTALLER_SIGN_IDENTITY="${INSTALLER_SIGN_IDENTITY:-}"
+KEYCHAIN_PATH="${KEYCHAIN_PATH:-}"
+NOTARIZE="${NOTARIZE:-false}"
+NOTARY_KEY_PATH="${NOTARY_KEY_PATH:-}"
+NOTARY_KEY_ID="${NOTARY_KEY_ID:-}"
+NOTARY_ISSUER_ID="${NOTARY_ISSUER_ID:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -97,8 +104,23 @@ fi
 find "$APP_DIR" -name ".DS_Store" -delete
 xattr -cr "$APP_DIR" 2>/dev/null || true
 
-echo "Ad-hoc signing app bundle..."
-codesign --force --deep --sign - "$APP_DIR"
+if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
+    echo "Ad-hoc signing app bundle..."
+    codesign --force --deep --sign - "$APP_DIR"
+else
+    echo "Developer ID signing app bundle..."
+    codesign_args=(
+        --force
+        --deep
+        --timestamp
+        --options runtime
+        --sign "$CODESIGN_IDENTITY"
+    )
+    if [[ -n "$KEYCHAIN_PATH" ]]; then
+        codesign_args+=(--keychain "$KEYCHAIN_PATH")
+    fi
+    codesign "${codesign_args[@]}" "$APP_DIR"
+fi
 
 rm -rf "$PKG_ROOT"
 mkdir -p "$PKG_ROOT/Applications"
@@ -106,16 +128,52 @@ ditto --norsrc "$APP_DIR" "$PKG_ROOT/Applications/$APP_NAME.app"
 xattr -cr "$PKG_ROOT" 2>/dev/null || true
 
 echo "Building installer package..."
-COPYFILE_DISABLE=1 pkgbuild \
-    --root "$PKG_ROOT" \
-    --install-location / \
-    --identifier "$BUNDLE_ID.pkg" \
-    --version "$VERSION" \
-    --ownership recommended \
-    --filter '(^|/)\.DS_Store$' \
-    --filter '(^|/)\._[^/]*$' \
-    --filter '(^|/)CVS($|/)' \
-    --filter '(^|/)\.svn($|/)' \
-    "$PKG_PATH"
+pkgbuild_args=(
+    --root "$PKG_ROOT"
+    --install-location /
+    --identifier "$BUNDLE_ID.pkg"
+    --version "$VERSION"
+    --ownership recommended
+    --filter '(^|/)\.DS_Store$'
+    --filter '(^|/)\._[^/]*$'
+    --filter '(^|/)CVS($|/)'
+    --filter '(^|/)\.svn($|/)'
+)
+
+if [[ -n "$INSTALLER_SIGN_IDENTITY" ]]; then
+    pkgbuild_args+=(--sign "$INSTALLER_SIGN_IDENTITY" --timestamp)
+    if [[ -n "$KEYCHAIN_PATH" ]]; then
+        pkgbuild_args+=(--keychain "$KEYCHAIN_PATH")
+    fi
+else
+    echo "Warning: building unsigned installer package. Set INSTALLER_SIGN_IDENTITY for public releases." >&2
+fi
+
+pkgbuild_args+=("$PKG_PATH")
+COPYFILE_DISABLE=1 pkgbuild "${pkgbuild_args[@]}"
+
+if [[ "$NOTARIZE" == "true" ]]; then
+    if [[ "$CODESIGN_IDENTITY" == "-" || -z "$INSTALLER_SIGN_IDENTITY" ]]; then
+        echo "Notarization requires Developer ID app and installer signatures." >&2
+        exit 1
+    fi
+    if [[ -z "$NOTARY_KEY_PATH" || -z "$NOTARY_KEY_ID" || -z "$NOTARY_ISSUER_ID" ]]; then
+        echo "Notarization requires NOTARY_KEY_PATH, NOTARY_KEY_ID, and NOTARY_ISSUER_ID." >&2
+        exit 1
+    fi
+
+    echo "Submitting installer package for notarization..."
+    xcrun notarytool submit "$PKG_PATH" \
+        --key "$NOTARY_KEY_PATH" \
+        --key-id "$NOTARY_KEY_ID" \
+        --issuer "$NOTARY_ISSUER_ID" \
+        --wait
+
+    echo "Stapling notarization ticket..."
+    xcrun stapler staple "$PKG_PATH"
+
+    echo "Verifying installer package with Gatekeeper..."
+    spctl -a -v --type install "$PKG_PATH"
+fi
 
 echo "Created $PKG_PATH"
