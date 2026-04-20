@@ -28,7 +28,7 @@
 - **IDE-style tabs** — preview tabs, double-click to pin, navigation history
 - **Column filtering** — per-column ILIKE filters with debounced search
 - **Infinite scroll** — lazy loading with automatic pagination
-- **Dark theme** — Linear-inspired design with purple accents
+- **Dark theme** — Darker design with purple accents
 
 ## Keyboard Shortcuts
 
