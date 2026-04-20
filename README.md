@@ -6,7 +6,6 @@
 
 <p align="center">
   <strong>A fast, keyboard-first PostgreSQL browser for macOS</strong><br/>
-  <em>Inspired by Linear's design language</em>
 </p>
 
 <p align="center">
