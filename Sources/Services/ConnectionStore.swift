@@ -3,6 +3,7 @@ import Foundation
 final class ConnectionStore {
     private let key = "drift.saved_connections"
     private let neonKeyKey = "drift.neon_api_key"
+    private let neonKeysKey = "drift.neon_api_keys"
     private let llmKeyKey = "drift.llm_api_key"
 
     func loadConnections() -> [SavedConnection] {
@@ -28,9 +29,43 @@ final class ConnectionStore {
         saveConnections(connections)
     }
 
+    func loadNeonAPIKeys() -> [NeonAPIKey] {
+        if let data = UserDefaults.standard.data(forKey: neonKeysKey),
+           let keys = try? JSONDecoder().decode([NeonAPIKey].self, from: data) {
+            return keys
+        }
+
+        let legacyKey = UserDefaults.standard.string(forKey: neonKeyKey) ?? ""
+        let trimmed = legacyKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        let migrated = [NeonAPIKey(name: "Default", key: trimmed)]
+        saveNeonAPIKeys(migrated)
+        return migrated
+    }
+
+    func saveNeonAPIKeys(_ keys: [NeonAPIKey]) {
+        if let data = try? JSONEncoder().encode(keys) {
+            UserDefaults.standard.set(data, forKey: neonKeysKey)
+        }
+        UserDefaults.standard.set(keys.first?.key ?? "", forKey: neonKeyKey)
+    }
+
+    var neonAPIKeys: [NeonAPIKey] {
+        get { loadNeonAPIKeys() }
+        set { saveNeonAPIKeys(newValue) }
+    }
+
     var neonAPIKey: String {
-        get { UserDefaults.standard.string(forKey: neonKeyKey) ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: neonKeyKey) }
+        get { loadNeonAPIKeys().first?.key ?? UserDefaults.standard.string(forKey: neonKeyKey) ?? "" }
+        set {
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                saveNeonAPIKeys([])
+            } else {
+                saveNeonAPIKeys([NeonAPIKey(name: "Default", key: trimmed)])
+            }
+        }
     }
 
     var llmAPIKey: String {

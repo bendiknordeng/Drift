@@ -58,17 +58,17 @@ struct DriftApp: App {
             }
             CommandGroup(after: .toolbar) {
                 Button("Quick Open") {
-                    appState.showCommandPalette.toggle()
+                    appState.openCommandPalette()
                 }
                 .keyboardShortcut("p", modifiers: .command)
 
                 Button("Search All Values") {
-                    appState.showGlobalSearch.toggle()
+                    appState.openGlobalSearch()
                 }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
 
                 Button("AI Query") {
-                    appState.showLLMChat.toggle()
+                    appState.openLLMChat()
                 }
                 .keyboardShortcut("k", modifiers: .command)
 
@@ -101,7 +101,11 @@ struct DriftApp: App {
                 Divider()
 
                 Button("Settings") {
-                    appState.showSettings.toggle()
+                    if appState.showSettings {
+                        appState.showSettings = false
+                    } else {
+                        appState.openSettings()
+                    }
                 }
                 .keyboardShortcut(",", modifiers: .command)
 

@@ -19,6 +19,10 @@ final class AppState: ObservableObject {
     @Published var schemas: [SchemaInfo] = []
     @Published var selectedTable: TableRef?
     @Published var tableColumns: [TableRef: [TableColumn]] = [:]
+    var selectedTableColumns: [TableColumn]? {
+        guard let ref = selectedTable else { return nil }
+        return tableColumns[ref]
+    }
     @Published var isLoadingSchemas = false
 
     // Tabs & Navigation
@@ -48,11 +52,18 @@ final class AppState: ObservableObject {
     @Published var browserGridFocusRequestID = 0
     @Published var sidebarNavigationDirection = 0
     @Published var sidebarNavigationRequestID = 0
+    @Published var sidebarFocusActiveTableCentered = false
+    @Published var sidebarFocusActiveTableRequestID = 0
     @Published var showConnectionSheet = false
     @Published var showSettings = false
+    @Published var settingsInitialTab = 0
     @Published var showCommandPalette = false
     @Published var showGlobalSearch = false
     @Published var showLLMChat = false
+    @Published var showSchemaModal = false
+    @Published var commandPaletteFocusRequestID = 0
+    @Published var globalSearchFocusRequestID = 0
+    @Published var llmChatFocusRequestID = 0
     @Published var isRefreshing = false
 
     // Global Search
@@ -65,7 +76,8 @@ final class AppState: ObservableObject {
     @Published var isLLMLoading = false
 
     // Neon browser (welcome screen)
-    @Published var neonWelcomeProjects: [NeonProject] = []
+    @Published var neonAPIKeys: [NeonAPIKey] = []
+    @Published var neonWelcomeProjects: [NeonProjectEntry] = []
     @Published var neonWelcomeBranches: [String: [NeonBranch]] = [:]
     @Published var isLoadingNeonWelcome = false
     @Published var starredNeonBranches: Set<String> = []  // "projectId/branchId"
@@ -80,30 +92,38 @@ final class AppState: ObservableObject {
     private let appearanceKey = "drift.appearance"
     private var loadingTableColumns: Set<TableRef> = []
 
+    var hasNeonAPIKeys: Bool {
+        neonAPIKeys.contains { !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
     init() {
         let loadedConnections = deduplicatedConnections(store.loadConnections())
         connections = loadedConnections
         if loadedConnections != store.loadConnections() {
             store.saveConnections(loadedConnections)
         }
-        neon.apiKey = store.neonAPIKey
+        neonAPIKeys = store.loadNeonAPIKeys()
+        neon.apiKey = neonAPIKeys.first?.key ?? ""
         llm.apiKey = store.llmAPIKey
         starredNeonBranches = Set(UserDefaults.standard.stringArray(forKey: starredKey) ?? [])
         if let rawAppearance = UserDefaults.standard.string(forKey: appearanceKey),
            let savedAppearance = AppAppearance(rawValue: rawAppearance) {
             appearance = savedAppearance
         }
-        if neon.isConfigured {
+        if hasNeonAPIKeys {
             Task { await loadNeonWelcome() }
         }
     }
 
-    func neonBranchKey(_ projectId: String, _ branchId: String) -> String {
-        "\(projectId)/\(branchId)"
+    func neonBranchKey(credentialId: UUID?, projectId: String, branchId: String) -> String {
+        if let credentialId {
+            return "\(credentialId.uuidString)/\(projectId)/\(branchId)"
+        }
+        return "\(projectId)/\(branchId)"
     }
 
-    func toggleStarNeonBranch(projectId: String, branchId: String) {
-        let key = neonBranchKey(projectId, branchId)
+    func toggleStarNeonBranch(project: NeonProjectEntry, branchId: String) {
+        let key = neonBranchKey(credentialId: project.credential.id, projectId: project.project.id, branchId: branchId)
         if starredNeonBranches.contains(key) {
             starredNeonBranches.remove(key)
         } else {
@@ -112,8 +132,18 @@ final class AppState: ObservableObject {
         UserDefaults.standard.set(Array(starredNeonBranches), forKey: starredKey)
     }
 
-    func isNeonBranchStarred(projectId: String, branchId: String) -> Bool {
-        starredNeonBranches.contains(neonBranchKey(projectId, branchId))
+    func isNeonBranchStarred(project: NeonProjectEntry, branchId: String) -> Bool {
+        isNeonBranchStarred(
+            projectId: project.project.id,
+            branchId: branchId,
+            credentialId: project.credential.id
+        )
+    }
+
+    func isNeonBranchStarred(projectId: String, branchId: String, credentialId: UUID? = nil) -> Bool {
+        let scopedKey = neonBranchKey(credentialId: credentialId, projectId: projectId, branchId: branchId)
+        let legacyKey = neonBranchKey(credentialId: nil, projectId: projectId, branchId: branchId)
+        return starredNeonBranches.contains(scopedKey) || starredNeonBranches.contains(legacyKey)
     }
 
     func goHome() async {
@@ -156,12 +186,19 @@ final class AppState: ObservableObject {
         activeTab = .browser
         showConnectionSheet = false
         showSettings = false
+        settingsInitialTab = 0
         showCommandPalette = false
         showGlobalSearch = false
         showLLMChat = false
+        showSchemaModal = false
+        commandPaletteFocusRequestID = 0
+        globalSearchFocusRequestID = 0
+        llmChatFocusRequestID = 0
         browserGridFocusRequestID = 0
         sidebarNavigationDirection = 0
         sidebarNavigationRequestID = 0
+        sidebarFocusActiveTableCentered = false
+        sidebarFocusActiveTableRequestID = 0
     }
 
     func requestBrowserGridFocus() {
@@ -174,6 +211,31 @@ final class AppState: ObservableObject {
         sidebarNavigationRequestID += 1
     }
 
+    func requestSidebarFocusActiveTable(centered: Bool = false) {
+        sidebarFocusActiveTableCentered = centered
+        sidebarFocusActiveTableRequestID += 1
+    }
+
+    func openCommandPalette() {
+        showCommandPalette = true
+        commandPaletteFocusRequestID += 1
+    }
+
+    func openGlobalSearch() {
+        showGlobalSearch = true
+        globalSearchFocusRequestID += 1
+    }
+
+    func openLLMChat() {
+        showLLMChat = true
+        llmChatFocusRequestID += 1
+    }
+
+    func openSettings(tab: Int = 0) {
+        settingsInitialTab = tab
+        showSettings = true
+    }
+
     private func isDisconnectRelatedError(_ error: Error) -> Bool {
         let debug = Self.debugDescription(error)
         return !isConnected ||
@@ -182,7 +244,14 @@ final class AppState: ObservableObject {
             debug.contains("notConnected")
     }
 
+    private func isCancellationError(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        let debug = Self.debugDescription(error)
+        return debug.contains("CancellationError")
+    }
+
     private func presentDatabaseErrorIfNeeded(_ error: Error, assign: (String) -> Void) {
+        guard !isCancellationError(error) else { return }
         guard !isDisconnectRelatedError(error) else { return }
         assign(Self.debugDescription(error))
     }
@@ -255,7 +324,9 @@ final class AppState: ObservableObject {
         }
 
         connections = store.loadConnections()
-        if neon.isConfigured {
+        neonAPIKeys = store.loadNeonAPIKeys()
+        neon.apiKey = neonAPIKeys.first?.key ?? ""
+        if hasNeonAPIKeys {
             await loadNeonWelcome()
         } else {
             neonWelcomeProjects = []
@@ -286,12 +357,20 @@ final class AppState: ObservableObject {
         let favorites = sorted.filter { connection in
             guard let projectId = connection.neonProjectId,
                   let branchId = connection.neonBranchId else { return false }
-            return isNeonBranchStarred(projectId: projectId, branchId: branchId)
+            return isNeonBranchStarred(
+                projectId: projectId,
+                branchId: branchId,
+                credentialId: connection.neonCredentialId
+            )
         }
         let recents = sorted.filter { connection in
             guard let projectId = connection.neonProjectId,
                   let branchId = connection.neonBranchId else { return true }
-            return !isNeonBranchStarred(projectId: projectId, branchId: branchId)
+            return !isNeonBranchStarred(
+                projectId: projectId,
+                branchId: branchId,
+                credentialId: connection.neonCredentialId
+            )
         }
         return Array((favorites + recents).prefix(9))
     }
@@ -619,9 +698,44 @@ final class AppState: ObservableObject {
     // MARK: - Settings
 
     func updateNeonAPIKey(_ key: String) {
-        neon.apiKey = key
-        store.neonAPIKey = key
-        if neon.isConfigured { Task { await loadNeonWelcome() } }
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        if neonAPIKeys.isEmpty {
+            neonAPIKeys = [NeonAPIKey(name: "Default", key: trimmed)]
+        } else {
+            neonAPIKeys[0].key = trimmed
+        }
+        saveNeonAPIKeysAndReload()
+    }
+
+    func addNeonAPIKey(name: String, key: String) {
+        let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { return }
+
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var displayName = trimmedName
+        if displayName.isEmpty {
+            displayName = "Neon Project \(neonAPIKeys.count + 1)"
+        }
+
+        if let existingIndex = neonAPIKeys.firstIndex(where: { $0.key == trimmedKey }) {
+            neonAPIKeys[existingIndex].name = displayName
+        } else {
+            neonAPIKeys.append(NeonAPIKey(name: displayName, key: trimmedKey))
+        }
+        saveNeonAPIKeysAndReload()
+    }
+
+    func removeNeonAPIKey(_ apiKey: NeonAPIKey) {
+        neonAPIKeys.removeAll { $0.id == apiKey.id }
+        saveNeonAPIKeysAndReload()
+    }
+
+    private func saveNeonAPIKeysAndReload() {
+        store.neonAPIKeys = neonAPIKeys
+        neon.apiKey = neonAPIKeys.first?.key ?? ""
+        Task { await loadNeonWelcome() }
     }
 
     func updateLLMAPIKey(_ key: String) {
@@ -632,47 +746,66 @@ final class AppState: ObservableObject {
     // MARK: - Neon Welcome
 
     func loadNeonWelcome() async {
-        guard neon.isConfigured else { return }
-        isLoadingNeonWelcome = true
-        do {
-            let orgs = try await neon.fetchOrganizations()
-            var allProjects: [NeonProject] = []
-            for org in orgs {
-                let projects = try await neon.fetchProjects(orgId: org.id)
-                allProjects.append(contentsOf: projects)
-            }
-            if orgs.isEmpty {
-                allProjects = try await neon.fetchProjects(orgId: nil)
-            }
-            neonWelcomeProjects = allProjects
-
-            // Fetch branches for each project
-            for project in allProjects {
-                let branches = try await neon.fetchBranches(projectId: project.id)
-                neonWelcomeBranches[project.id] = branches
-            }
-        } catch {
-            // Silent fail on welcome screen
+        let apiKeys = neonAPIKeys.filter { !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard !apiKeys.isEmpty else {
+            neonWelcomeProjects = []
+            neonWelcomeBranches = [:]
+            return
         }
+
+        isLoadingNeonWelcome = true
+        var projectEntries: [NeonProjectEntry] = []
+        var branchesByProject: [String: [NeonBranch]] = [:]
+
+        for apiKey in apiKeys {
+            do {
+                let orgs = try await neon.fetchOrganizations(apiKey: apiKey.key)
+                var projects: [NeonProject] = []
+                for org in orgs {
+                    let orgProjects = try await neon.fetchProjects(orgId: org.id, apiKey: apiKey.key)
+                    projects.append(contentsOf: orgProjects)
+                }
+                if orgs.isEmpty {
+                    projects = try await neon.fetchProjects(orgId: nil, apiKey: apiKey.key)
+                }
+
+                for project in projects {
+                    let entry = NeonProjectEntry(credential: apiKey, project: project)
+                    projectEntries.append(entry)
+                    branchesByProject[entry.id] = try await neon.fetchBranches(projectId: project.id, apiKey: apiKey.key)
+                }
+            } catch {
+                continue
+            }
+        }
+
+        neonWelcomeProjects = projectEntries
+        neonWelcomeBranches = branchesByProject
         isLoadingNeonWelcome = false
     }
 
-    func connectToNeonBranch(project: NeonProject, branch: NeonBranch) async {
+    func connectToNeonBranch(project: NeonProjectEntry, branch: NeonBranch) async {
         isConnecting = true
         connectionError = nil
         do {
-            let dbs = try await neon.fetchDatabases(projectId: project.id, branchId: branch.id)
-            let roles = try await neon.fetchRoles(projectId: project.id, branchId: branch.id)
+            let apiKey = project.credential.key
+            let dbs = try await neon.fetchDatabases(projectId: project.project.id, branchId: branch.id, apiKey: apiKey)
+            let roles = try await neon.fetchRoles(projectId: project.project.id, branchId: branch.id, apiKey: apiKey)
             let db = dbs.first?.name ?? "neondb"
             let role = roles.first?.name ?? "neondb_owner"
 
             let uri = try await neon.fetchConnectionURI(
-                projectId: project.id, branchId: branch.id, database: db, role: role
+                projectId: project.project.id,
+                branchId: branch.id,
+                database: db,
+                role: role,
+                apiKey: apiKey
             )
             if var conn = SavedConnection.fromConnectionString(uri) {
                 conn.name = "\(project.name)/\(branch.name)"
-                conn.neonProjectId = project.id
+                conn.neonProjectId = project.project.id
                 conn.neonBranchId = branch.id
+                conn.neonCredentialId = project.credential.id
                 isConnecting = false
                 await connect(to: conn)
             }

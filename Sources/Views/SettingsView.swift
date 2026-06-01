@@ -3,7 +3,9 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var state: AppState
     @State private var llmKey = ""
-    @State private var neonKey = ""
+    @State private var neonProjectName = ""
+    @State private var neonProjectKey = ""
+    @State private var showNeonAddForm = false
     @State private var llmModel = "claude-sonnet-4-20250514"
     @State private var selectedTab = 0
     @FocusState private var viewFocused: Bool
@@ -64,7 +66,7 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 420, height: 440)
+        .frame(width: 520, height: 520)
         .background(Theme.overlay)
         .cornerRadius(Theme.cornerRadius)
         .overlay(
@@ -90,9 +92,12 @@ struct SettingsView: View {
         }
         .onAppear {
             viewFocused = true
+            selectedTab = state.settingsInitialTab
             llmKey = state.store.llmAPIKey
-            neonKey = state.store.neonAPIKey
             llmModel = state.llm.model
+        }
+        .onChange(of: state.settingsInitialTab) { _, tab in
+            selectedTab = tab
         }
     }
 
@@ -172,29 +177,165 @@ struct SettingsView: View {
             .cornerRadius(8)
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
 
-            // Neon
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
-                    Image("NeonLogo").resizable().frame(width: 14, height: 14)
-                    Text("Neon")
-                        .font(.system(.caption, weight: .semibold))
-                        .foregroundColor(Theme.text)
-                    Spacer()
-                    statusBadge(!neonKey.isEmpty)
-                }
-
-                fieldRow("API Key", secure: $neonKey, placeholder: "neon_api_key_...") {
-                    state.updateNeonAPIKey($0)
-                }
-            }
-            .padding(12)
-            .background(Theme.surface)
-            .cornerRadius(8)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+            neonProjectsPanel
 
             Spacer()
         }
         .padding(20)
+    }
+
+    private var neonProjectsPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image("NeonLogo").resizable().frame(width: 14, height: 14)
+                Text("Neon Projects")
+                    .font(.system(.caption, weight: .semibold))
+                    .foregroundColor(Theme.text)
+                Text("\(state.neonAPIKeys.count)")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(Theme.textTertiary)
+                Spacer()
+                statusBadge(state.hasNeonAPIKeys)
+            }
+
+            if state.neonAPIKeys.isEmpty && !showNeonAddForm {
+                Button {
+                    showNeonAddForm = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(Theme.accent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Add Project")
+                                .font(.system(.caption, weight: .medium))
+                                .foregroundColor(Theme.text)
+                            Text("Save a Neon API key to load projects and branches on Home.")
+                                .font(.system(.caption2))
+                                .foregroundColor(Theme.textTertiary)
+                        }
+                        Spacer()
+                    }
+                    .padding(10)
+                    .background(Theme.bg)
+                    .cornerRadius(6)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if !state.neonAPIKeys.isEmpty {
+                VStack(spacing: 6) {
+                    ForEach(state.neonAPIKeys) { item in
+                        neonProjectKeyRow(item)
+                    }
+                }
+            }
+
+            if showNeonAddForm {
+                neonProjectAddForm
+            } else if !state.neonAPIKeys.isEmpty {
+                Button {
+                    showNeonAddForm = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                        Text("Add Project")
+                    }
+                    .font(.system(.caption, weight: .medium))
+                }
+                .buttonStyle(DriftButtonStyle())
+            }
+        }
+        .padding(12)
+        .background(Theme.surface)
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+    }
+
+    private func neonProjectKeyRow(_ item: NeonAPIKey) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: "folder.badge.gearshape")
+                .font(.caption)
+                .foregroundColor(Theme.success)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.displayName)
+                    .font(.system(.caption, weight: .medium))
+                    .foregroundColor(Theme.text)
+                    .lineLimit(1)
+                Text(item.maskedKey)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(Theme.textTertiary)
+            }
+            Spacer()
+            Button {
+                state.removeNeonAPIKey(item)
+            } label: {
+                Image(systemName: "trash")
+                    .font(.caption2)
+                    .foregroundColor(Theme.textTertiary)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Theme.bg)
+        .cornerRadius(6)
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.borderSubtle, lineWidth: 1))
+    }
+
+    private var neonProjectAddForm: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Add Project")
+                .font(.system(.caption, weight: .semibold))
+                .foregroundColor(Theme.text)
+
+            TextField("Project label", text: $neonProjectName)
+                .textFieldStyle(.plain)
+                .font(.system(.caption))
+                .foregroundColor(Theme.text)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Theme.bg)
+                .cornerRadius(5)
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.border, lineWidth: 1))
+
+            SecureField("neon_api_key_...", text: $neonProjectKey)
+                .textFieldStyle(.plain)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(Theme.text)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Theme.bg)
+                .cornerRadius(5)
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.border, lineWidth: 1))
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    resetNeonAddForm()
+                }
+                .buttonStyle(DriftButtonStyle())
+
+                Button("Add Project") {
+                    state.addNeonAPIKey(name: neonProjectName, key: neonProjectKey)
+                    resetNeonAddForm()
+                }
+                .buttonStyle(DriftButtonStyle(isPrimary: true))
+                .disabled(neonProjectKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(10)
+        .background(Theme.bg)
+        .cornerRadius(6)
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border, lineWidth: 1))
+    }
+
+    private func resetNeonAddForm() {
+        neonProjectName = ""
+        neonProjectKey = ""
+        showNeonAddForm = false
     }
 
     private func modelButton(_ label: String, tag: String) -> some View {

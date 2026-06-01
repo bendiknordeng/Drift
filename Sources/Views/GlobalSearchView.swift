@@ -29,9 +29,10 @@ struct GlobalSearchView: View {
         )
         .shadow(color: .black.opacity(0.5), radius: 30, y: 10)
         .onAppear {
-            focusedField = .search
             query = state.globalSearchQuery
+            focusSearchField()
         }
+        .onChange(of: state.globalSearchFocusRequestID) { _, _ in focusSearchField() }
         .onKeyPress(.escape) {
             if navigatingResults { navigatingResults = false; focusedField = .search; return .handled }
             state.showGlobalSearch = false
@@ -43,19 +44,8 @@ struct GlobalSearchView: View {
             return .handled
         }
         .onKeyPress(.downArrow) {
-            if let results = state.globalSearchResults,
-               !results.columns.isEmpty,
-               !results.rows.isEmpty {
-                navigatingResults = true
-                if anchorCell == nil {
-                    let addr = CellAddress(row: 0, col: 0)
-                    selectedCells = [addr]
-                    anchorCell = addr
-                }
-                resultsFocusRequestID += 1
-                return .handled
-            }
-            return .ignored
+            guard focusedField == .search else { return .ignored }
+            return moveFocusToResults()
         }
     }
 
@@ -72,6 +62,9 @@ struct GlobalSearchView: View {
                 .foregroundColor(Theme.text)
                 .focused($focusedField, equals: .search)
                 .onChange(of: query) { _, _ in debouncedSearch() }
+                .onKeyPress(.downArrow) {
+                    moveFocusToResults()
+                }
 
             if state.isSearching {
                 ProgressView()
@@ -124,6 +117,7 @@ struct GlobalSearchView: View {
                 selectedCells: $selectedCells,
                 anchorCell: $anchorCell,
                 columnWidths: $columnWidths,
+                registerForGlobalSearchKeyboardMonitor: true,
                 focusRequestID: resultsFocusRequestID,
                 highlightQuery: query,
                 onEscape: {
@@ -167,5 +161,31 @@ struct GlobalSearchView: View {
             state.globalSearchQuery = query
             await state.performGlobalSearch()
         }
+    }
+
+    private func focusSearchField() {
+        focusedField = nil
+        DispatchQueue.main.async {
+            focusedField = .search
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            focusedField = .search
+        }
+    }
+
+    private func moveFocusToResults() -> KeyPress.Result {
+        guard let results = state.globalSearchResults,
+              !results.columns.isEmpty,
+              !results.rows.isEmpty else { return .ignored }
+
+        navigatingResults = true
+        focusedField = nil
+        if anchorCell == nil {
+            let addr = CellAddress(row: 0, col: 0)
+            selectedCells = [addr]
+            anchorCell = addr
+        }
+        resultsFocusRequestID += 1
+        return .handled
     }
 }

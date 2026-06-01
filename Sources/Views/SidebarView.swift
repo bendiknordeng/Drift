@@ -6,6 +6,7 @@ struct SidebarView: View {
     @State private var expandedSchemas: Set<String> = ["public"]
     @State private var selectedIndex = -1
     @FocusState private var searchFocused: Bool
+    @FocusState private var viewFocused: Bool
 
     private var allFilteredTables: [(schema: String, table: String)] {
         filteredSchemas.flatMap { schema in
@@ -115,8 +116,11 @@ struct SidebarView: View {
                     let tables = allFilteredTables
                     if idx >= 0, idx < tables.count {
                         let item = tables[idx]
-                        proxy.scrollTo("\(item.schema).\(item.table)", anchor: .center)
+                        proxy.scrollTo("\(item.schema).\(item.table)")
                     }
+                }
+                .onChange(of: state.sidebarFocusActiveTableRequestID) { _, _ in
+                    focusActiveTable(proxy: proxy, centered: state.sidebarFocusActiveTableCentered)
                 }
             }
 
@@ -160,10 +164,43 @@ struct SidebarView: View {
             .background(Theme.surface)
         }
         .background(Theme.bg)
+        .focusable()
+        .focused($viewFocused)
+        .focusEffectDisabled()
+        .onKeyPress(.downArrow, phases: .down) { press in
+            guard viewFocused else { return .ignored }
+            guard press.modifiers.contains(.option) else { return .ignored }
+            let tables = allFilteredTables
+            if tables.isEmpty { return .ignored }
+            // Move selection down
+            selectedIndex = min(selectedIndex + 1, tables.count - 1)
+            // Expand the schema of the newly selected row
+            if selectedIndex >= 0 && selectedIndex < tables.count {
+                let item = tables[selectedIndex]
+                expandedSchemas.insert(item.schema)
+            }
+            return .handled
+        }
+        .onKeyPress(.upArrow, phases: .down) { press in
+            guard viewFocused else { return .ignored }
+            guard press.modifiers.contains(.option) else { return .ignored }
+            let tables = allFilteredTables
+            if tables.isEmpty { return .ignored }
+            // Move selection up
+            selectedIndex = max(-1, selectedIndex - 1)
+            // If moved above first item within a schema, collapse previous schema if selection moved outside
+            if selectedIndex >= 0 && selectedIndex < tables.count {
+                let item = tables[selectedIndex]
+                // Keep current schema expanded
+                expandedSchemas.insert(item.schema)
+            }
+            return .handled
+        }
         .onAppear {
             if state.selectedTable == nil {
                 searchFocused = true
             }
+            viewFocused = true
         }
     }
 
@@ -268,6 +305,33 @@ struct SidebarView: View {
             selectedIndex = min(selectedIndex + 1, tables.count - 1)
         } else {
             selectedIndex = max(-1, selectedIndex - 1)
+        }
+    }
+
+    private func focusActiveTable(proxy: ScrollViewProxy, centered: Bool) {
+        guard let ref = state.selectedTable else { return }
+
+        searchText = ""
+        expandedSchemas.insert(ref.schema)
+        searchFocused = true
+
+        let visibleSchemas = state.schemas.filter { !Self.hiddenSchemas.contains($0.name) }
+        let tables = visibleSchemas.flatMap { schema in
+            schema.tables.map { (schema: schema.name, table: $0) }
+        }
+
+        guard let index = tables.firstIndex(where: { $0.schema == ref.schema && $0.table == ref.table }) else {
+            selectedIndex = -1
+            return
+        }
+
+        selectedIndex = index
+        DispatchQueue.main.async {
+            if centered {
+                proxy.scrollTo("\(ref.schema).\(ref.table)", anchor: .center)
+            } else {
+                proxy.scrollTo("\(ref.schema).\(ref.table)")
+            }
         }
     }
 }

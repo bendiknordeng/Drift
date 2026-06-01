@@ -39,46 +39,25 @@ struct DataGridView: View {
 
     private func gridContent(_ data: QueryResultData) -> some View {
         VStack(spacing: 0) {
-            filterRow(data.columns)
-
             NSDataGridView(
                 data: data,
                 selectedCells: $selectedCells,
                 anchorCell: $anchorCell,
                 columnWidths: $columnWidths,
+                columnFilters: state.columnFilters,
                 onSort: { col in Task { await state.toggleSort(column: col) } },
+                onFilterChange: { col, value in state.updateFilter(column: col, value: value) },
                 onLoadMore: { Task { await state.loadMoreRows() } },
                 truncated: data.truncated,
                 registerForBrowserKeyboardMonitor: true,
                 focusRequestID: state.browserGridFocusRequestID,
                 onCommandEscape: { Task { await state.goHome() } },
+                onFocusActiveTableInSidebar: { state.requestSidebarFocusActiveTable() },
                 uiScale: state.fontScale
             )
 
             paginationBar(data)
         }
-    }
-
-    private func filterRow(_ columns: [ColumnInfo]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                Color.clear.frame(width: 44, height: 28)
-                ForEach(columns) { col in
-                    let binding = Binding<String>(
-                        get: { state.columnFilters[col.name] ?? "" },
-                        set: { v in state.updateFilter(column: col.name, value: v) }
-                    )
-                    TextField("Filter...", text: binding)
-                        .textFieldStyle(.plain)
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundColor(Theme.text)
-                        .padding(.horizontal, 8)
-                        .frame(width: columnWidths[col.name] ?? 180, height: 28)
-                }
-            }
-        }
-        .background(Theme.surface.opacity(0.5))
-        .overlay(Rectangle().frame(height: 1).foregroundColor(Theme.borderSubtle), alignment: .bottom)
     }
 
     private func paginationBar(_ data: QueryResultData) -> some View {

@@ -7,10 +7,15 @@ final class KeyboardMonitor {
     private var monitor: Any?
     private weak var appState: AppState?
     private weak var browserGridTableView: DriftCellTableView?
+    private weak var globalSearchGridTableView: DriftCellTableView?
     private weak var sqlEditorTextView: SQLTextView?
 
     func registerBrowserGrid(_ tableView: DriftCellTableView) {
         browserGridTableView = tableView
+    }
+
+    func registerGlobalSearchGrid(_ tableView: DriftCellTableView) {
+        globalSearchGridTableView = tableView
     }
 
     func registerSQLEditor(_ textView: SQLTextView) {
@@ -36,6 +41,10 @@ final class KeyboardMonitor {
             }
 
             if self.routeHomeShortcutKey(event, appState: appState) {
+                return nil
+            }
+
+            if self.routeGlobalSearchGridKey(event, appState: appState) {
                 return nil
             }
 
@@ -184,6 +193,33 @@ final class KeyboardMonitor {
             tableView.selectAll(nil)
             return true
 
+        default:
+            return false
+        }
+    }
+
+    private func routeGlobalSearchGridKey(_ event: NSEvent, appState: AppState) -> Bool {
+        guard appState.showGlobalSearch,
+              let tableView = globalSearchGridTableView,
+              let window = tableView.window else {
+            return false
+        }
+
+        if window.firstResponder is NSTextView {
+            return false
+        }
+
+        switch event.keyCode {
+        case 123, 124, 125, 126:
+            window.makeFirstResponder(tableView)
+            tableView.keyDown(with: event)
+            return true
+        case 0:  // A
+            let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            guard modifiers == [.command] else { return false }
+            window.makeFirstResponder(tableView)
+            tableView.selectAll(nil)
+            return true
         default:
             return false
         }

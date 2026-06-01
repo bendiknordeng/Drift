@@ -7,15 +7,19 @@ struct NSDataGridView: NSViewRepresentable {
     @Binding var selectedCells: Set<CellAddress>
     @Binding var anchorCell: CellAddress?
     @Binding var columnWidths: [String: CGFloat]
+    var columnFilters: [String: String] = [:]
     var onSort: ((String) -> Void)? = nil
+    var onFilterChange: ((String, String) -> Void)? = nil
     var onLoadMore: (() -> Void)? = nil
     var truncated: Bool = false
     var registerForBrowserKeyboardMonitor = false
+    var registerForGlobalSearchKeyboardMonitor = false
     var focusRequestID: Int = 0
     var highlightQuery: String = ""
     var onEscape: (() -> Void)? = nil
     var onExitUpFromFirstRow: (() -> Void)? = nil
     var onCommandEscape: (() -> Void)? = nil
+    var onFocusActiveTableInSidebar: (() -> Void)? = nil
     var uiScale: CGFloat = 1.0
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -43,12 +47,18 @@ struct NSDataGridView: NSViewRepresentable {
         tableView.delegate = context.coordinator
         tableView.focusRingType = .none
         tableView.coordinator = context.coordinator
+        let headerView = DriftTableHeaderView()
+        headerView.coordinator = context.coordinator
+        tableView.headerView = headerView
 
         scrollView.documentView = tableView
         context.coordinator.tableView = tableView
         context.coordinator.scrollView = scrollView
         if registerForBrowserKeyboardMonitor {
             KeyboardMonitor.shared.registerBrowserGrid(tableView)
+        }
+        if registerForGlobalSearchKeyboardMonitor {
+            KeyboardMonitor.shared.registerGlobalSearchGrid(tableView)
         }
         context.coordinator.buildColumns(for: data)
         tableView.reloadData()
@@ -57,6 +67,8 @@ struct NSDataGridView: NSViewRepresentable {
         context.coordinator.lastFocusRequestID = focusRequestID
         context.coordinator.lastHighlightQuery = highlightQuery
         context.coordinator.lastColorScheme = context.environment.colorScheme
+        context.coordinator.lastSelectedCells = selectedCells
+        context.coordinator.lastAnchorCell = anchorCell
         return scrollView
     }
 
@@ -67,8 +79,14 @@ struct NSDataGridView: NSViewRepresentable {
         if registerForBrowserKeyboardMonitor {
             KeyboardMonitor.shared.registerBrowserGrid(tableView)
         }
+        if registerForGlobalSearchKeyboardMonitor {
+            KeyboardMonitor.shared.registerGlobalSearchGrid(tableView)
+        }
         tableView.backgroundColor = Theme.nsBg
         tableView.gridColor = Theme.nsBorderSubtle
+        if let headerView = tableView.headerView as? DriftTableHeaderView {
+            headerView.coordinator = context.coordinator
+        }
 
         let colNames = data.columns.map(\.name)
         if context.coordinator.lastColumnNames != colNames {
@@ -90,6 +108,13 @@ struct NSDataGridView: NSViewRepresentable {
             context.coordinator.lastHighlightQuery = highlightQuery
             context.coordinator.lastColorScheme = context.environment.colorScheme
         }
+        context.coordinator.refreshHeaderCells(for: data)
+        if context.coordinator.lastSelectedCells != selectedCells ||
+            context.coordinator.lastAnchorCell != anchorCell {
+            context.coordinator.lastSelectedCells = selectedCells
+            context.coordinator.lastAnchorCell = anchorCell
+            context.coordinator.refreshSelectionDisplay()
+        }
 
         // Scroll to anchor cell
         if let cell = anchorCell, cell != context.coordinator.lastScrolledCell {
@@ -109,7 +134,7 @@ struct NSDataGridView: NSViewRepresentable {
 
         if context.coordinator.lastFocusRequestID != focusRequestID {
             context.coordinator.lastFocusRequestID = focusRequestID
-            scrollView.window?.makeFirstResponder(tableView)
+            context.coordinator.focusTableView()
         }
     }
 
@@ -124,11 +149,26 @@ struct NSDataGridView: NSViewRepresentable {
         var lastFocusRequestID: Int = 0
         var lastHighlightQuery: String = ""
         var lastColorScheme: ColorScheme?
+        var lastSelectedCells: Set<CellAddress> = []
+        var lastAnchorCell: CellAddress?
         var dragStart: CellAddress?
         var selectionOrigin: CellAddress?
         var copyFlash = false
+        var filterPopover: NSPopover?
+        var valuePreviewPopover: NSPopover?
 
         init(_ parent: NSDataGridView) { self.parent = parent }
+
+        func focusTableView() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let tableView = self.tableView else { return }
+                tableView.window?.makeFirstResponder(tableView)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                guard let self, let tableView = self.tableView else { return }
+                tableView.window?.makeFirstResponder(tableView)
+            }
+        }
 
         func refreshSelectionDisplay() {
             guard let tv = tableView else { return }
@@ -154,6 +194,7 @@ struct NSDataGridView: NSViewRepresentable {
 
             let numCol = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("__row"))
             numCol.title = "#"
+            numCol.headerCell = DriftTableHeaderCell(title: "#", hasFilterButton: false)
             numCol.width = 44
             numCol.minWidth = 30
             numCol.maxWidth = 60
@@ -163,6 +204,11 @@ struct NSDataGridView: NSViewRepresentable {
             for col in data.columns {
                 let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(col.name))
                 column.title = col.name
+                column.headerCell = DriftTableHeaderCell(
+                    title: col.name,
+                    hasFilterButton: parent.onFilterChange != nil,
+                    isFilterActive: !(parent.columnFilters[col.name] ?? "").isEmpty
+                )
                 column.width = parent.columnWidths[col.name] ?? 180
                 column.minWidth = 60
                 column.resizingMask = [.userResizingMask]
@@ -171,42 +217,185 @@ struct NSDataGridView: NSViewRepresentable {
             lastColumnNames = data.columns.map(\.name)
         }
 
+        func refreshHeaderCells(for data: QueryResultData) {
+            guard let tv = tableView else { return }
+
+            for column in tv.tableColumns {
+                let name = column.identifier.rawValue
+                let hasFilterButton = name != "__row" && parent.onFilterChange != nil
+                let title = name == "__row" ? "#" : name
+
+                if let headerCell = column.headerCell as? DriftTableHeaderCell {
+                    headerCell.stringValue = title
+                    headerCell.hasFilterButton = hasFilterButton
+                    headerCell.isFilterActive = !(parent.columnFilters[name] ?? "").isEmpty
+                } else {
+                    column.headerCell = DriftTableHeaderCell(
+                        title: title,
+                        hasFilterButton: hasFilterButton,
+                        isFilterActive: !(parent.columnFilters[name] ?? "").isEmpty
+                    )
+                }
+            }
+
+            tv.headerView?.needsDisplay = true
+        }
+
+        func showFilterPopover(for tableColumn: NSTableColumn, relativeTo rect: NSRect, in view: NSView) {
+            let columnName = tableColumn.identifier.rawValue
+            guard columnName != "__row", parent.onFilterChange != nil else { return }
+
+            filterPopover?.close()
+            valuePreviewPopover?.close()
+
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.contentSize = NSSize(width: 240, height: 58)
+            popover.contentViewController = NSHostingController(
+                rootView: ColumnFilterPopoverView(
+                    columnName: columnName,
+                    initialValue: parent.columnFilters[columnName] ?? "",
+                    onChange: { [weak self] value in
+                        guard let self else { return }
+                        DispatchQueue.main.async {
+                            self.parent.onFilterChange?(columnName, value)
+                            self.refreshHeaderCells(for: self.parent.data)
+                        }
+                    }
+                )
+            )
+
+            filterPopover = popover
+            popover.show(relativeTo: rect, of: view, preferredEdge: .maxY)
+        }
+
+        func showFilterPopoverForFocusedColumn() -> Bool {
+            guard parent.onFilterChange != nil,
+                  let focusedCell = parent.anchorCell,
+                  focusedCell.col >= 0,
+                  let tv = tableView,
+                  let headerView = tv.headerView else {
+                return false
+            }
+
+            let columnIndex = focusedCell.col + 1
+            guard columnIndex > 0, columnIndex < tv.tableColumns.count else { return false }
+
+            scrollToCell(focusedCell)
+            DispatchQueue.main.async { [weak self, weak headerView] in
+                guard let self,
+                      let headerView,
+                      let tv = self.tableView,
+                      columnIndex < tv.tableColumns.count else {
+                    return
+                }
+
+                let tableColumn = tv.tableColumns[columnIndex]
+                self.showFilterPopover(
+                    for: tableColumn,
+                    relativeTo: headerView.headerRect(ofColumn: columnIndex),
+                    in: headerView
+                )
+            }
+
+            return true
+        }
+
+        func showValuePreviewForFocusedCell() -> Bool {
+            guard let focusedCell = parent.anchorCell,
+                  focusedCell.row >= 0,
+                  focusedCell.col >= 0,
+                  focusedCell.row < parent.data.rows.count,
+                  focusedCell.col < parent.data.columns.count,
+                  let tv = tableView else {
+                return false
+            }
+
+            let row = focusedCell.row
+            let col = focusedCell.col
+            let value = col < parent.data.rows[row].count ? parent.data.rows[row][col] : nil
+            let columnName = parent.data.columns[col].name
+            let columnIndex = col + 1
+
+            scrollToCell(focusedCell)
+            filterPopover?.close()
+            valuePreviewPopover?.close()
+
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.contentSize = NSSize(width: 440, height: 260)
+            popover.contentViewController = NSHostingController(
+                rootView: CellValuePreviewPopoverView(
+                    columnName: columnName,
+                    rowNumber: row + 1,
+                    value: value
+                )
+            )
+
+            var rect = tv.rect(ofColumn: columnIndex)
+            rect.origin.y = CGFloat(row) * tv.rowHeight
+            rect.size.height = tv.rowHeight
+
+            valuePreviewPopover = popover
+            popover.show(relativeTo: rect, of: tv, preferredEdge: .maxY)
+            return true
+        }
+
         // MARK: - Data Source
 
         func numberOfRows(in tableView: NSTableView) -> Int { parent.data.rows.count }
+
+        private func cellParagraphStyle(alignment: NSTextAlignment = .left) -> NSParagraphStyle {
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byTruncatingTail
+            paragraph.alignment = alignment
+            return paragraph
+        }
+
+        private func cellTextAttributes(
+            color: NSColor,
+            font: NSFont = DriftCellMetrics.valueFont,
+            alignment: NSTextAlignment = .left
+        ) -> [NSAttributedString.Key: Any] {
+            [
+                .foregroundColor: color,
+                .font: font,
+                .paragraphStyle: cellParagraphStyle(alignment: alignment)
+            ]
+        }
 
         private func applyValue(_ value: String?, to cell: DriftCellView) {
             if let value {
                 if parent.highlightQuery.isEmpty {
                     cell.label.stringValue = value
-                    cell.label.attributedStringValue = NSAttributedString(string: value, attributes: [
-                        .foregroundColor: Theme.nsText,
-                        .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-                    ])
+                    cell.label.attributedStringValue = NSAttributedString(
+                        string: value,
+                        attributes: cellTextAttributes(color: Theme.nsText)
+                    )
                 } else if let range = value.range(of: parent.highlightQuery, options: .caseInsensitive) {
-                    let attributed = NSMutableAttributedString(string: value, attributes: [
-                        .foregroundColor: Theme.nsText,
-                        .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-                    ])
+                    let attributed = NSMutableAttributedString(
+                        string: value,
+                        attributes: cellTextAttributes(color: Theme.nsText)
+                    )
                     let nsRange = NSRange(range, in: value)
                     attributed.addAttributes([
                         .foregroundColor: Theme.nsAccent,
-                        .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold)
+                        .font: DriftCellMetrics.valueBoldFont
                     ], range: nsRange)
                     cell.label.attributedStringValue = attributed
                 } else {
                     cell.label.stringValue = value
-                    cell.label.attributedStringValue = NSAttributedString(string: value, attributes: [
-                        .foregroundColor: Theme.nsText,
-                        .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-                    ])
+                    cell.label.attributedStringValue = NSAttributedString(
+                        string: value,
+                        attributes: cellTextAttributes(color: Theme.nsText)
+                    )
                 }
                 cell.label.textColor = Theme.nsText
             } else {
-                cell.label.attributedStringValue = NSAttributedString(string: "NULL", attributes: [
-                    .foregroundColor: Theme.nsTextSecondary,
-                    .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-                ])
+                cell.label.attributedStringValue = NSAttributedString(
+                    string: "NULL",
+                    attributes: cellTextAttributes(color: Theme.nsTextSecondary)
+                )
                 cell.label.textColor = Theme.nsTextSecondary
             }
         }
@@ -219,10 +408,10 @@ struct NSDataGridView: NSViewRepresentable {
 
             if colId == "__row" {
                 cell.label.stringValue = "\(row + 1)"
-                cell.label.attributedStringValue = NSAttributedString(string: "\(row + 1)", attributes: [
-                    .foregroundColor: Theme.nsTextSecondary,
-                    .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-                ])
+                cell.label.attributedStringValue = NSAttributedString(
+                    string: "\(row + 1)",
+                    attributes: cellTextAttributes(color: Theme.nsTextSecondary, alignment: .center)
+                )
                 cell.label.textColor = Theme.nsTextSecondary
                 cell.label.alignment = .center
                 cell.isSelected = false
@@ -431,6 +620,69 @@ struct NSDataGridView: NSViewRepresentable {
             refreshSelectionDisplay()
         }
 
+        // MARK: - Column Sizing
+
+        func autofitFocusedColumn() -> Bool {
+            guard let focusedCell = parent.anchorCell,
+                  focusedCell.col >= 0,
+                  focusedCell.col < parent.data.columns.count,
+                  let tv = tableView else {
+                return false
+            }
+
+            let columnIndex = focusedCell.col + 1
+            guard columnIndex > 0, columnIndex < tv.tableColumns.count else { return false }
+
+            let tableColumn = tv.tableColumns[columnIndex]
+            let columnName = parent.data.columns[focusedCell.col].name
+            let fittedWidth = autofitWidth(forColumn: focusedCell.col, named: columnName, tableColumn: tableColumn)
+
+            tableColumn.width = fittedWidth
+            parent.columnWidths[columnName] = fittedWidth
+            tv.headerView?.needsDisplay = true
+            refreshSelectionDisplay()
+            scrollToCell(focusedCell)
+            return true
+        }
+
+        private func autofitWidth(forColumn column: Int, named columnName: String, tableColumn: NSTableColumn) -> CGFloat {
+            let headerWidth = measuredWidth(columnName, font: DriftCellMetrics.headerFont) + headerPaddingWidth()
+            var maxWidth = headerWidth
+
+            for row in parent.data.rows {
+                let value: String
+                if column < row.count {
+                    value = row[column] ?? "NULL"
+                } else {
+                    value = "NULL"
+                }
+
+                let width = measuredWidth(value, font: DriftCellMetrics.valueFont)
+                    + DriftCellMetrics.horizontalPadding * 2
+                    + DriftCellMetrics.autofitExtraPadding
+                maxWidth = max(maxWidth, width)
+            }
+
+            let roundedWidth = ceil(maxWidth)
+            let minimumWidth = max(tableColumn.minWidth, 60)
+            return max(minimumWidth, min(roundedWidth, DriftCellMetrics.autofitMaxWidth))
+        }
+
+        private func headerPaddingWidth() -> CGFloat {
+            if parent.onFilterChange != nil {
+                return DriftHeaderMetrics.leftPadding
+                    + DriftHeaderMetrics.filterButtonSize
+                    + DriftHeaderMetrics.filterButtonTrailing
+                    + DriftHeaderMetrics.rightPadding
+            }
+
+            return 10
+        }
+
+        private func measuredWidth(_ text: String, font: NSFont) -> CGFloat {
+            (text as NSString).size(withAttributes: [.font: font]).width
+        }
+
         // MARK: - Copy
 
         func copySelection() {
@@ -468,6 +720,294 @@ struct NSDataGridView: NSViewRepresentable {
     }
 }
 
+private enum DriftCellMetrics {
+    static let horizontalPadding: CGFloat = 6
+    static let autofitExtraPadding: CGFloat = 18
+    static let autofitMaxWidth: CGFloat = 960
+
+    static var valueFont: NSFont {
+        NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    }
+
+    static var valueBoldFont: NSFont {
+        NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold)
+    }
+
+    static var headerFont: NSFont {
+        NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold)
+    }
+}
+
+// MARK: - Header View
+
+private enum DriftHeaderMetrics {
+    static let leftPadding: CGFloat = 9
+    static let rightPadding: CGFloat = 7
+    static let filterButtonSize: CGFloat = 18
+    static let filterButtonTrailing: CGFloat = 5
+
+    static func filterButtonRect(in cellFrame: NSRect) -> NSRect {
+        NSRect(
+            x: cellFrame.maxX - filterButtonTrailing - filterButtonSize,
+            y: cellFrame.midY - filterButtonSize / 2,
+            width: filterButtonSize,
+            height: filterButtonSize
+        )
+    }
+}
+
+private final class DriftTableHeaderView: NSTableHeaderView {
+    weak var coordinator: NSDataGridView.Coordinator?
+
+    override func mouseDown(with event: NSEvent) {
+        guard let tableView else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        let point = convert(event.locationInWindow, from: nil)
+        let columnIndex = column(at: point)
+        guard columnIndex >= 0, columnIndex < tableView.tableColumns.count else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        let tableColumn = tableView.tableColumns[columnIndex]
+        let headerRect = headerRect(ofColumn: columnIndex)
+        if tableColumn.identifier.rawValue != "__row",
+           DriftHeaderMetrics.filterButtonRect(in: headerRect).contains(point) {
+            coordinator?.showFilterPopover(for: tableColumn, relativeTo: headerRect, in: self)
+            return
+        }
+
+        super.mouseDown(with: event)
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard let tableView else { return }
+
+        for (index, tableColumn) in tableView.tableColumns.enumerated()
+            where tableColumn.identifier.rawValue != "__row" {
+            addCursorRect(
+                DriftHeaderMetrics.filterButtonRect(in: headerRect(ofColumn: index)),
+                cursor: .pointingHand
+            )
+        }
+    }
+}
+
+private final class DriftTableHeaderCell: NSTableHeaderCell {
+    var hasFilterButton: Bool
+    var isFilterActive: Bool
+
+    init(title: String, hasFilterButton: Bool, isFilterActive: Bool = false) {
+        self.hasFilterButton = hasFilterButton
+        self.isFilterActive = isFilterActive
+        super.init(textCell: title)
+    }
+
+    required init(coder: NSCoder) {
+        self.hasFilterButton = false
+        self.isFilterActive = false
+        super.init(coder: coder)
+    }
+
+    override func copy(with zone: NSZone? = nil) -> Any {
+        DriftTableHeaderCell(
+            title: stringValue,
+            hasFilterButton: hasFilterButton,
+            isFilterActive: isFilterActive
+        )
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {
+        Theme.nsSurface.setFill()
+        cellFrame.fill()
+
+        drawTitle(in: cellFrame)
+        if hasFilterButton {
+            drawFilterButton(in: cellFrame)
+        }
+
+        Theme.nsBorderSubtle.setStroke()
+        let borderPath = NSBezierPath()
+        borderPath.lineWidth = 1
+        borderPath.move(to: NSPoint(x: cellFrame.minX, y: cellFrame.maxY - 0.5))
+        borderPath.line(to: NSPoint(x: cellFrame.maxX, y: cellFrame.maxY - 0.5))
+        borderPath.move(to: NSPoint(x: cellFrame.maxX - 0.5, y: cellFrame.minY))
+        borderPath.line(to: NSPoint(x: cellFrame.maxX - 0.5, y: cellFrame.maxY))
+        borderPath.stroke()
+    }
+
+    private func drawTitle(in cellFrame: NSRect) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.alignment = hasFilterButton ? .left : .center
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .foregroundColor: Theme.nsTextSecondary,
+            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold),
+            .paragraphStyle: paragraph
+        ]
+
+        var titleRect = cellFrame
+        if hasFilterButton {
+            titleRect.origin.x += DriftHeaderMetrics.leftPadding
+            titleRect.size.width -= DriftHeaderMetrics.leftPadding
+                + DriftHeaderMetrics.filterButtonSize
+                + DriftHeaderMetrics.filterButtonTrailing
+                + DriftHeaderMetrics.rightPadding
+        } else {
+            titleRect = titleRect.insetBy(dx: 5, dy: 0)
+        }
+
+        let titleSize = (stringValue as NSString).size(withAttributes: attributes)
+        titleRect.origin.y = cellFrame.midY - titleSize.height / 2
+        titleRect.size.height = titleSize.height + 2
+        (stringValue as NSString).draw(in: titleRect, withAttributes: attributes)
+    }
+
+    private func drawFilterButton(in cellFrame: NSRect) {
+        let buttonRect = DriftHeaderMetrics.filterButtonRect(in: cellFrame)
+        let buttonPath = NSBezierPath(roundedRect: buttonRect, xRadius: 4, yRadius: 4)
+
+        (isFilterActive ? Theme.nsAccentMuted : Theme.nsSurfaceHover.withAlphaComponent(0.45)).setFill()
+        buttonPath.fill()
+
+        if isFilterActive {
+            Theme.nsAccent.withAlphaComponent(0.5).setStroke()
+            buttonPath.lineWidth = 1
+            buttonPath.stroke()
+        }
+
+        let iconColor = isFilterActive ? Theme.nsAccent : Theme.nsTextTertiary
+        iconColor.setStroke()
+
+        let midX = buttonRect.midX
+        let midY = buttonRect.midY
+        let path = NSBezierPath()
+        path.lineCapStyle = .round
+        path.lineWidth = 1.2
+
+        for (width, offsetY) in [(9.0, 4.0), (6.0, 0.0), (3.0, -4.0)] {
+            let halfWidth = CGFloat(width) / 2
+            let y = midY + CGFloat(offsetY)
+            path.move(to: NSPoint(x: midX - halfWidth, y: y))
+            path.line(to: NSPoint(x: midX + halfWidth, y: y))
+        }
+
+        path.stroke()
+    }
+}
+
+private struct ColumnFilterPopoverView: View {
+    let columnName: String
+    let onChange: (String) -> Void
+    @State private var value: String
+    @FocusState private var isFocused: Bool
+
+    init(columnName: String, initialValue: String, onChange: @escaping (String) -> Void) {
+        self.columnName = columnName
+        self.onChange = onChange
+        _value = State(initialValue: initialValue)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(.caption, weight: .medium))
+                .foregroundColor(value.isEmpty ? Theme.textTertiary : Theme.accent)
+                .frame(width: 18)
+
+            TextField("Filter \(columnName)", text: $value)
+                .textFieldStyle(.plain)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(Theme.text)
+                .focused($isFocused)
+                .padding(.horizontal, 8)
+                .frame(height: 28)
+                .background(Theme.surface)
+                .cornerRadius(Theme.smallRadius)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.smallRadius)
+                        .stroke(Theme.border, lineWidth: 1)
+                )
+
+            Kbd("F")
+
+            if !value.isEmpty {
+                Button {
+                    value = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(.caption))
+                        .foregroundColor(Theme.textTertiary)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(10)
+        .frame(width: 240)
+        .background(Theme.surfaceElevated)
+        .onChange(of: value) { _, newValue in
+            onChange(newValue)
+        }
+        .onAppear {
+            DispatchQueue.main.async {
+                isFocused = true
+            }
+        }
+    }
+}
+
+private struct CellValuePreviewPopoverView: View {
+    let columnName: String
+    let rowNumber: Int
+    let value: String?
+
+    private var displayValue: String {
+        value ?? "NULL"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text(columnName)
+                    .font(.system(.caption, design: .monospaced).weight(.semibold))
+                    .foregroundColor(Theme.text)
+                    .lineLimit(1)
+
+                Text("Row \(rowNumber)")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(Theme.textTertiary)
+
+                Spacer()
+            }
+
+            ScrollView {
+                Text(displayValue)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(value == nil ? Theme.textSecondary : Theme.text)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .textSelection(.enabled)
+                    .padding(10)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.surface)
+            .cornerRadius(Theme.smallRadius)
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.smallRadius)
+                    .stroke(Theme.border, lineWidth: 1)
+            )
+        }
+        .padding(12)
+        .frame(width: 440, height: 260)
+        .background(Theme.surfaceElevated)
+    }
+}
+
 // MARK: - Cell View
 
 class DriftCellView: NSView {
@@ -480,16 +1020,23 @@ class DriftCellView: NSView {
 
     init() {
         super.init(frame: .zero)
-        label.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        label.font = DriftCellMetrics.valueFont
         label.translatesAutoresizingMaskIntoConstraints = false
         label.lineBreakMode = .byTruncatingTail
         label.maximumNumberOfLines = 1
         label.drawsBackground = false
         label.isBordered = false
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        if let textCell = label.cell as? NSTextFieldCell {
+            textCell.lineBreakMode = .byTruncatingTail
+            textCell.truncatesLastVisibleLine = true
+            textCell.usesSingleLineMode = true
+        }
         addSubview(label)
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DriftCellMetrics.horizontalPadding),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -DriftCellMetrics.horizontalPadding),
             label.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
     }
@@ -587,6 +1134,23 @@ class DriftCellTableView: NSTableView {
             if cmd { coordinator?.selectAllCells(); return }
         case 8:   // C
             if cmd { coordinator?.copySelection(); return }
+        case 11:  // B
+            if isSidebarFocusShortcut(event), let onFocusActiveTableInSidebar = coordinator?.parent.onFocusActiveTableInSidebar {
+                onFocusActiveTableInSidebar()
+                return
+            }
+        case 13:  // W
+            if isColumnAutofitShortcut(event), coordinator?.autofitFocusedColumn() == true {
+                return
+            }
+        case 3:   // F
+            if isFilterShortcut(event), coordinator?.showFilterPopoverForFocusedColumn() == true {
+                return
+            }
+        case 49:  // Space
+            if isCellPreviewShortcut(event), coordinator?.showValuePreviewForFocusedCell() == true {
+                return
+            }
         default: break
         }
         super.keyDown(with: event)
@@ -607,6 +1171,29 @@ class DriftCellTableView: NSTableView {
     private func isGoHomeShortcut(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
         return modifiers == [.command] && (event.keyCode == 4 || event.keyCode == 53)
+    }
+
+    private func isFilterShortcut(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard modifiers.isEmpty || modifiers == [.shift] else { return false }
+        return event.charactersIgnoringModifiers?.lowercased() == "f"
+    }
+
+    private func isCellPreviewShortcut(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        return modifiers.isEmpty && event.charactersIgnoringModifiers == " "
+    }
+
+    private func isSidebarFocusShortcut(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard modifiers.isEmpty || modifiers == [.shift] else { return false }
+        return event.charactersIgnoringModifiers?.lowercased() == "b"
+    }
+
+    private func isColumnAutofitShortcut(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard modifiers.isEmpty || modifiers == [.shift] else { return false }
+        return event.charactersIgnoringModifiers?.lowercased() == "w"
     }
 
     private func isGridNavigationShortcut(_ event: NSEvent) -> Bool {

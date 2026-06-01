@@ -26,7 +26,8 @@ struct LLMChatView: View {
                 .stroke(Theme.border, lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.5), radius: 30, y: 10)
-        .onAppear { isFocused = true }
+        .onAppear { focusInput() }
+        .onChange(of: state.llmChatFocusRequestID) { _, _ in focusInput() }
         .onKeyPress(.escape) {
             state.showLLMChat = false
             return .handled
@@ -141,6 +142,16 @@ struct LLMChatView: View {
         guard !text.isEmpty else { return }
         input = ""
         Task { await state.askLLM(question: text) }
+    }
+
+    private func focusInput() {
+        isFocused = false
+        DispatchQueue.main.async {
+            isFocused = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            isFocused = true
+        }
     }
 
     @ViewBuilder

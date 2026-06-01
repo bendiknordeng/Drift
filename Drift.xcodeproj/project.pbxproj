@@ -1,0 +1,465 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		048D343FCEF0A517777377F1 /* DataGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAE824C08897E3C20A7B5F3F /* DataGridView.swift */; };
+		2852CAAA818896CE584F5687 /* ConnectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3174AC5568D08FC9120BC71A /* ConnectionStore.swift */; };
+		3411BDE26C3DBBE7BA993E51 /* NSDataGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B3F67675889F1771464191 /* NSDataGridView.swift */; };
+		36291A92C95865835A45F985 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A95998EE00CB87DD07C2BC /* SettingsView.swift */; };
+		3C0D56783C51304F4F514519 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F9C7FC74B54D77021614A8D /* Models.swift */; };
+		4D91EF301CCB842796EA78C9 /* DriftApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 280749C332C243B46134F42D /* DriftApp.swift */; };
+		4F24B99E40D86A86403D69C3 /* GlobalSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26041A206B74C15F61F7E7BE /* GlobalSearchView.swift */; };
+		5E14EEA5642AB8959110FE30 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116070ACA3024FC21C31E4A8 /* MainView.swift */; };
+		71BD76AF4E0A40E0B5798F58 /* ConnectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55142FCC0E75514B6078892E /* ConnectionSheet.swift */; };
+		7417927E01E47CD60495EBBC /* LLMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A07B2017BDEF53A72B47C9C /* LLMService.swift */; };
+		A994BD892DD2A3769DCA18D7 /* SQLEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA232602B779280393B22327 /* SQLEditorView.swift */; };
+		AC455A3DA985DD45C17CAD42 /* KeyboardMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87671883F385D767FD9F8E1E /* KeyboardMonitor.swift */; };
+		AFE010BCF5254BE39601B345 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D02A8C96284EDACB02090742 /* Assets.xcassets */; };
+		B5B2AC82ED29C1E6A2C23D30 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BF649C50FE27DA7F5D7CF8F /* Theme.swift */; };
+		BD2FC769297124016AC9F675 /* StatusBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00517085C62C26AC61172B2 /* StatusBarView.swift */; };
+		C19FC8011AC214C1C105A948 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31D7DCB3EDC216D32D1F86F9 /* SidebarView.swift */; };
+		C60ACE1A07595DB2BD18BF8C /* PostgresService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1342D1CE36FC604999F074ED /* PostgresService.swift */; };
+		DAE26FC4A45DC1B31B7A97D8 /* SQLSyntaxEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2566E50397B2E6BC38355127 /* SQLSyntaxEditor.swift */; };
+		E92F38509C89151F9997A38A /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 610411C83C65F8C575B33A8D /* AppState.swift */; };
+		EA461A149CE8C537C738BF00 /* PostgresNIO in Frameworks */ = {isa = PBXBuildFile; productRef = 98CAA440388DDF83CB953B4B /* PostgresNIO */; };
+		F4D79C3144EAE82505BA9F14 /* CommandPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D042D18448E52ECB536E2A4 /* CommandPalette.swift */; };
+		F621D78D403FA72DC1552249 /* NeonService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD131BE0F9EADEDEECEF2FEA /* NeonService.swift */; };
+		FB5CA7560236C008F2CC9817 /* LLMChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24DE46E7DE35D03950D675F7 /* LLMChatView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		01A95998EE00CB87DD07C2BC /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		116070ACA3024FC21C31E4A8 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		1342D1CE36FC604999F074ED /* PostgresService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostgresService.swift; sourceTree = "<group>"; };
+		14DDEBE02FC8B9AD00891002 /* TableSchemaModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableSchemaModal.swift; sourceTree = "<group>"; };
+		24DE46E7DE35D03950D675F7 /* LLMChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMChatView.swift; sourceTree = "<group>"; };
+		2566E50397B2E6BC38355127 /* SQLSyntaxEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SQLSyntaxEditor.swift; sourceTree = "<group>"; };
+		26041A206B74C15F61F7E7BE /* GlobalSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSearchView.swift; sourceTree = "<group>"; };
+		280749C332C243B46134F42D /* DriftApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriftApp.swift; sourceTree = "<group>"; };
+		3174AC5568D08FC9120BC71A /* ConnectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStore.swift; sourceTree = "<group>"; };
+		31D7DCB3EDC216D32D1F86F9 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		35B3F67675889F1771464191 /* NSDataGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSDataGridView.swift; sourceTree = "<group>"; };
+		55142FCC0E75514B6078892E /* ConnectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSheet.swift; sourceTree = "<group>"; };
+		552F5AE6789DA294DDB91E8B /* Drift.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Drift.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		610411C83C65F8C575B33A8D /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		6D042D18448E52ECB536E2A4 /* CommandPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPalette.swift; sourceTree = "<group>"; };
+		7F9C7FC74B54D77021614A8D /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		87671883F385D767FD9F8E1E /* KeyboardMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMonitor.swift; sourceTree = "<group>"; };
+		8BF649C50FE27DA7F5D7CF8F /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		9A07B2017BDEF53A72B47C9C /* LLMService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMService.swift; sourceTree = "<group>"; };
+		AD131BE0F9EADEDEECEF2FEA /* NeonService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeonService.swift; sourceTree = "<group>"; };
+		D02A8C96284EDACB02090742 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		EA232602B779280393B22327 /* SQLEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SQLEditorView.swift; sourceTree = "<group>"; };
+		EAE824C08897E3C20A7B5F3F /* DataGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataGridView.swift; sourceTree = "<group>"; };
+		F00517085C62C26AC61172B2 /* StatusBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		188A35C15589F9B39A3AD2F7 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EA461A149CE8C537C738BF00 /* PostgresNIO in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0EA67573775347F2DA7F1A99 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				552F5AE6789DA294DDB91E8B /* Drift.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		1DCFB184D941DDFAE30E78F8 = {
+			isa = PBXGroup;
+			children = (
+				B6495617EF8C84B0E9FE27AF /* Sources */,
+				0EA67573775347F2DA7F1A99 /* Products */,
+				14DDEBE02FC8B9AD00891002 /* TableSchemaModal.swift */,
+			);
+			sourceTree = "<group>";
+		};
+		2827ED89339EA2CB790B02A8 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				6D042D18448E52ECB536E2A4 /* CommandPalette.swift */,
+				55142FCC0E75514B6078892E /* ConnectionSheet.swift */,
+				EAE824C08897E3C20A7B5F3F /* DataGridView.swift */,
+				26041A206B74C15F61F7E7BE /* GlobalSearchView.swift */,
+				24DE46E7DE35D03950D675F7 /* LLMChatView.swift */,
+				116070ACA3024FC21C31E4A8 /* MainView.swift */,
+				35B3F67675889F1771464191 /* NSDataGridView.swift */,
+				01A95998EE00CB87DD07C2BC /* SettingsView.swift */,
+				31D7DCB3EDC216D32D1F86F9 /* SidebarView.swift */,
+				EA232602B779280393B22327 /* SQLEditorView.swift */,
+				2566E50397B2E6BC38355127 /* SQLSyntaxEditor.swift */,
+				F00517085C62C26AC61172B2 /* StatusBarView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		79ED8B41BADAE32CFDC11719 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				7F9C7FC74B54D77021614A8D /* Models.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		7B437C1885AF8B4ECE11193E /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				3174AC5568D08FC9120BC71A /* ConnectionStore.swift */,
+				87671883F385D767FD9F8E1E /* KeyboardMonitor.swift */,
+				9A07B2017BDEF53A72B47C9C /* LLMService.swift */,
+				AD131BE0F9EADEDEECEF2FEA /* NeonService.swift */,
+				1342D1CE36FC604999F074ED /* PostgresService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		B6495617EF8C84B0E9FE27AF /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				D02A8C96284EDACB02090742 /* Assets.xcassets */,
+				280749C332C243B46134F42D /* DriftApp.swift */,
+				8BF649C50FE27DA7F5D7CF8F /* Theme.swift */,
+				79ED8B41BADAE32CFDC11719 /* Models */,
+				7B437C1885AF8B4ECE11193E /* Services */,
+				B8C8481BCAAD732D79E174D1 /* State */,
+				2827ED89339EA2CB790B02A8 /* Views */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		B8C8481BCAAD732D79E174D1 /* State */ = {
+			isa = PBXGroup;
+			children = (
+				610411C83C65F8C575B33A8D /* AppState.swift */,
+			);
+			path = State;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		CAEDCE34417A91D973F68377 /* Drift */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F406649AF13D92F90944A7F1 /* Build configuration list for PBXNativeTarget "Drift" */;
+			buildPhases = (
+				271ED68B29D0DA60F5E3CB98 /* Sources */,
+				F72ECFB3C1B5BC2EFDA4A82C /* Resources */,
+				188A35C15589F9B39A3AD2F7 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Drift;
+			packageProductDependencies = (
+				98CAA440388DDF83CB953B4B /* PostgresNIO */,
+			);
+			productName = Drift;
+			productReference = 552F5AE6789DA294DDB91E8B /* Drift.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C57AFFDCB18AE227A2FF2ECA /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2630;
+			};
+			buildConfigurationList = 68F4AD629CB425B82407650A /* Build configuration list for PBXProject "Drift" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 1DCFB184D941DDFAE30E78F8;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				46FA664D6342CC0A1B3AAC3D /* XCRemoteSwiftPackageReference "postgres-nio" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 0EA67573775347F2DA7F1A99 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				CAEDCE34417A91D973F68377 /* Drift */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F72ECFB3C1B5BC2EFDA4A82C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AFE010BCF5254BE39601B345 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		271ED68B29D0DA60F5E3CB98 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E92F38509C89151F9997A38A /* AppState.swift in Sources */,
+				F4D79C3144EAE82505BA9F14 /* CommandPalette.swift in Sources */,
+				71BD76AF4E0A40E0B5798F58 /* ConnectionSheet.swift in Sources */,
+				2852CAAA818896CE584F5687 /* ConnectionStore.swift in Sources */,
+				048D343FCEF0A517777377F1 /* DataGridView.swift in Sources */,
+				4D91EF301CCB842796EA78C9 /* DriftApp.swift in Sources */,
+				4F24B99E40D86A86403D69C3 /* GlobalSearchView.swift in Sources */,
+				AC455A3DA985DD45C17CAD42 /* KeyboardMonitor.swift in Sources */,
+				FB5CA7560236C008F2CC9817 /* LLMChatView.swift in Sources */,
+				7417927E01E47CD60495EBBC /* LLMService.swift in Sources */,
+				5E14EEA5642AB8959110FE30 /* MainView.swift in Sources */,
+				3C0D56783C51304F4F514519 /* Models.swift in Sources */,
+				3411BDE26C3DBBE7BA993E51 /* NSDataGridView.swift in Sources */,
+				F621D78D403FA72DC1552249 /* NeonService.swift in Sources */,
+				C60ACE1A07595DB2BD18BF8C /* PostgresService.swift in Sources */,
+				A994BD892DD2A3769DCA18D7 /* SQLEditorView.swift in Sources */,
+				DAE26FC4A45DC1B31B7A97D8 /* SQLSyntaxEditor.swift in Sources */,
+				36291A92C95865835A45F985 /* SettingsView.swift in Sources */,
+				C19FC8011AC214C1C105A948 /* SidebarView.swift in Sources */,
+				BD2FC769297124016AC9F675 /* StatusBarView.swift in Sources */,
+				B5B2AC82ED29C1E6A2C23D30 /* Theme.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1C9B0CB149C7B02DC969D4FD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		7C190047C04497DC44F492BC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.edda.drift;
+				PRODUCT_NAME = Drift;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.10;
+			};
+			name = Release;
+		};
+		D2C48B12CC940FCA05A8E07F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		D912882FFA52AB5EEF2B7B2D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.edda.drift;
+				PRODUCT_NAME = Drift;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.10;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		68F4AD629CB425B82407650A /* Build configuration list for PBXProject "Drift" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D2C48B12CC940FCA05A8E07F /* Debug */,
+				1C9B0CB149C7B02DC969D4FD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F406649AF13D92F90944A7F1 /* Build configuration list for PBXNativeTarget "Drift" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D912882FFA52AB5EEF2B7B2D /* Debug */,
+				7C190047C04497DC44F492BC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		46FA664D6342CC0A1B3AAC3D /* XCRemoteSwiftPackageReference "postgres-nio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/vapor/postgres-nio.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.21.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		98CAA440388DDF83CB953B4B /* PostgresNIO */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 46FA664D6342CC0A1B3AAC3D /* XCRemoteSwiftPackageReference "postgres-nio" */;
+			productName = PostgresNIO;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = C57AFFDCB18AE227A2FF2ECA /* Project object */;
+}

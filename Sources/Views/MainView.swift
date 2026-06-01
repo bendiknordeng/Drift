@@ -50,35 +50,47 @@ struct MainView: View {
             if state.showCommandPalette {
                 overlayBackground
                 CommandPalette()
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    .transition(AnyTransition.opacity.combined(with: AnyTransition.scale(scale: 0.95)))
             }
 
             if state.showGlobalSearch {
                 overlayBackground
                 GlobalSearchView()
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    .transition(AnyTransition.opacity.combined(with: AnyTransition.scale(scale: 0.95)))
             }
 
             if state.showLLMChat {
                 overlayBackground
                 LLMChatView()
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    .transition(AnyTransition.opacity.combined(with: AnyTransition.scale(scale: 0.95)))
             }
 
             if state.showSettings {
                 overlayBackground
                 SettingsView()
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    .transition(AnyTransition.opacity.combined(with: AnyTransition.scale(scale: 0.95)))
+            }
+
+            if state.showSchemaModal {
+                overlayBackground
+                SchemaModalView()
+                    .environmentObject(state)
+                    .transition(AnyTransition.opacity.combined(with: AnyTransition.scale(scale: 0.98)))
             }
         }
         .animation(.easeOut(duration: 0.15), value: state.showCommandPalette)
         .animation(.easeOut(duration: 0.15), value: state.showGlobalSearch)
         .animation(.easeOut(duration: 0.15), value: state.showLLMChat)
         .animation(.easeOut(duration: 0.15), value: state.showSettings)
-        .onKeyPress(.escape, phases: .down) { press in
-            guard press.modifiers.contains(.command), state.isConnected else { return .ignored }
-            Task { await state.goHome() }
-            return .handled
+        .onKeyPress(characters: CharacterSet(charactersIn: "S"), phases: .down) { press in
+            guard state.isConnected, state.selectedTable != nil else { return .ignored }
+            let mask: EventModifiers = [.command, .shift, .option, .control]
+            let required: EventModifiers = [.command, .shift]
+            if press.modifiers.intersection(mask) == required {
+                state.showSchemaModal = true
+                return .handled
+            }
+            return .ignored
         }
         .onAppear {
             KeyboardMonitor.shared.start(appState: state)
@@ -166,6 +178,21 @@ struct MainView: View {
                     alignment: .bottom
                 )
             }
+
+            Button {
+                state.showSchemaModal = true
+            } label: {
+                HStack(spacing: 6) {
+                    Text("Schema")
+                        .font(.system(.caption, weight: .medium))
+                        .foregroundColor(state.selectedTable == nil ? Theme.textTertiary.opacity(0.45) : Theme.textTertiary)
+                    Kbd("⌘⇧S")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+            .disabled(state.selectedTable == nil)
 
             Spacer()
 
@@ -278,6 +305,7 @@ struct MainView: View {
                 state.showGlobalSearch = false
                 state.showLLMChat = false
                 state.showSettings = false
+                state.showSchemaModal = false
             }
     }
 
@@ -318,8 +346,13 @@ struct WelcomeView: View {
         case updated
     }
 
+    private enum HomeRowFocus: Hashable {
+        case saved(UUID)
+        case neonBranch(String)
+    }
+
     private struct NeonBranchEntry: Identifiable {
-        let project: NeonProject
+        let project: NeonProjectEntry
         let branch: NeonBranch
         let createdDate: Date?
         let updatedDate: Date?
@@ -330,7 +363,7 @@ struct WelcomeView: View {
     }
 
     private struct NeonProjectSection: Identifiable {
-        let project: NeonProject
+        let project: NeonProjectEntry
         let branches: [NeonBranchEntry]
 
         var id: String { project.id }
@@ -345,6 +378,7 @@ struct WelcomeView: View {
     @State private var allNeonBranches: [NeonBranchEntry] = []
     @FocusState private var viewFocused: Bool
     @FocusState private var neonSearchFocused: Bool
+    @FocusState private var focusedHomeRow: HomeRowFocus?
     private let neonDateFormatter = ISO8601DateFormatter()
     private let homeSearchActivationCharacters =
         CharacterSet.letters
@@ -366,13 +400,22 @@ struct WelcomeView: View {
         return allNeonBranches[neonSelectedIndex]
     }
 
+    private var isFocusedHomeRowNeonBranch: Bool {
+        switch focusedHomeRow {
+        case .some(.neonBranch):
+            return true
+        default:
+            return false
+        }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Left: New + Recent
             leftPanel
 
             // Divider
-            if state.neon.isConfigured {
+            if state.hasNeonAPIKeys {
                 Rectangle().fill(Theme.border).frame(width: 1)
                 // Right: Neon databases
                 rightPanel
@@ -409,7 +452,7 @@ struct WelcomeView: View {
             handleNeonArrowNavigation(direction: -1)
         }
         .onKeyPress(.return) {
-            connectHighlightedNeonBranch()
+            connectFocusedHomeRow()
         }
         .onChange(of: neonSearch) { _, _ in
             neonSelectedIndex = -1
@@ -419,6 +462,14 @@ struct WelcomeView: View {
         .onChange(of: neonBranchSortDescending) { _, _ in rebuildNeonSections() }
         .onChange(of: state.neonWelcomeProjects) { _, _ in rebuildNeonSections() }
         .onChange(of: state.neonWelcomeBranches) { _, _ in rebuildNeonSections() }
+        .onChange(of: neonSearchFocused) { _, isFocused in
+            if isFocused {
+                focusedHomeRow = nil
+            }
+        }
+        .onChange(of: focusedHomeRow) { _, newValue in
+            handleHomeRowFocusChange(newValue)
+        }
     }
 
     // MARK: - Left Panel
@@ -446,18 +497,36 @@ struct WelcomeView: View {
                     }
                 }
 
-                Button {
-                    state.showConnectionSheet = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "plus")
-                            .font(.system(.caption).weight(.medium))
-                        Text("New Connection")
-                            .font(.system(.caption, weight: .medium))
+                VStack(spacing: 8) {
+                    Button {
+                        state.showConnectionSheet = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "plus")
+                                .font(.system(.caption).weight(.medium))
+                            Text("New Connection")
+                                .font(.system(.caption, weight: .medium))
+                        }
+                        .frame(width: 180)
                     }
-                    .frame(width: 180)
+                    .buttonStyle(DriftButtonStyle(isPrimary: true))
+
+                    if !state.hasNeonAPIKeys {
+                        Button {
+                            state.openSettings(tab: 1)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image("NeonLogo")
+                                    .resizable()
+                                    .frame(width: 13, height: 13)
+                                Text("Add Neon Project")
+                                    .font(.system(.caption, weight: .medium))
+                            }
+                            .frame(width: 180)
+                        }
+                        .buttonStyle(DriftButtonStyle())
+                    }
                 }
-                .buttonStyle(DriftButtonStyle(isPrimary: true))
             }
             .frame(maxWidth: welcomeSidebarContentWidth)
             .padding(.top, 56)
@@ -489,7 +558,7 @@ struct WelcomeView: View {
                     .padding(.bottom, 12)
             }
         }
-        .frame(maxWidth: state.neon.isConfigured ? welcomeSidebarWidth : .infinity,
+        .frame(maxWidth: state.hasNeonAPIKeys ? welcomeSidebarWidth : .infinity,
                maxHeight: .infinity,
                alignment: .top)
         .padding(.horizontal, 24)
@@ -544,7 +613,7 @@ struct WelcomeView: View {
     private func savedConnectionRow(_ conn: SavedConnection) -> some View {
         HStack(spacing: 6) {
             Button {
-                Task { await state.connect(to: conn) }
+                connectSavedConnection(conn)
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: connectionIconName(for: conn))
@@ -570,6 +639,13 @@ struct WelcomeView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .focusable()
+            .focused($focusedHomeRow, equals: .saved(conn.id))
+            .focusEffectDisabled()
+            .onKeyPress(.return, phases: .down) { _ in
+                connectSavedConnection(conn)
+                return .handled
+            }
 
             Button { state.removeConnection(conn) } label: {
                 Image(systemName: "xmark")
@@ -580,7 +656,13 @@ struct WelcomeView: View {
             }
             .buttonStyle(.plain)
         }
-        .background(Theme.surface)
+        .background {
+            if focusedHomeRow == .saved(conn.id) {
+                Theme.surfaceHover
+            } else {
+                Theme.surface
+            }
+        }
         .cornerRadius(Theme.smallRadius)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.smallRadius)
@@ -617,7 +699,10 @@ struct WelcomeView: View {
         if isFavoriteConnection(connection) {
             return Theme.warning
         }
-        return connection.neonProjectId != nil ? Theme.success : Theme.accent
+        if connection.neonProjectId != nil {
+            return Theme.success
+        }
+        return Theme.accent
     }
 
     // MARK: - Right Panel (Neon)
@@ -632,11 +717,23 @@ struct WelcomeView: View {
                 Text("Neon Databases")
                     .font(.system(.caption, weight: .semibold))
                     .foregroundColor(Theme.text)
+                Text("\(state.neonAPIKeys.count)")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(Theme.textTertiary)
                 Spacer()
                 if state.isLoadingNeonWelcome {
                     ProgressView().scaleEffect(0.5).tint(Theme.accent)
                 }
                 Kbd("/")
+
+                Button {
+                    state.openSettings(tab: 1)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.caption2)
+                        .foregroundColor(Theme.textTertiary)
+                }
+                .buttonStyle(.plain)
 
                 Button {
                     Task { await state.loadNeonWelcome() }
@@ -765,6 +862,9 @@ struct WelcomeView: View {
                 Text(section.project.name)
                     .font(.system(.caption, weight: .medium))
                     .foregroundColor(Theme.text)
+                Text(section.project.credential.displayName)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(Theme.textTertiary)
                 Spacer()
             }
             .frame(minWidth: neonTableMinWidth, alignment: .leading)
@@ -775,10 +875,10 @@ struct WelcomeView: View {
             ForEach(section.branches) { entry in
                 let branch = entry.branch
                 let isHighlighted = isBranchHighlighted(entry)
-                let isStarred = state.isNeonBranchStarred(projectId: section.project.id, branchId: branch.id)
+                let isStarred = state.isNeonBranchStarred(project: section.project, branchId: branch.id)
                 HStack(spacing: 0) {
                     Button {
-                        Task { await state.connectToNeonBranch(project: section.project, branch: branch) }
+                        connectNeonBranch(project: section.project, branch: branch)
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: branch.name == "main" ? "leaf.fill" : "arrow.branch")
@@ -808,9 +908,16 @@ struct WelcomeView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(NeonBranchButtonStyle())
+                    .focusable()
+                    .focused($focusedHomeRow, equals: .neonBranch(entry.id))
+                    .focusEffectDisabled()
+                    .onKeyPress(.return, phases: .down) { _ in
+                        connectNeonBranch(project: section.project, branch: branch)
+                        return .handled
+                    }
 
                     Button {
-                        state.toggleStarNeonBranch(projectId: section.project.id, branchId: branch.id)
+                        state.toggleStarNeonBranch(project: section.project, branchId: branch.id)
                     } label: {
                         Image(systemName: isStarred ? "star.fill" : "star")
                             .font(.system(.caption2))
@@ -861,7 +968,12 @@ struct WelcomeView: View {
 
     private func rebuildNeonSections() {
         let rebuiltSections = state.neonWelcomeProjects
-            .sorted { $0.name < $1.name }
+            .sorted { lhs, rhs in
+                if lhs.credential.displayName == rhs.credential.displayName {
+                    return lhs.name < rhs.name
+                }
+                return lhs.credential.displayName < rhs.credential.displayName
+            }
             .compactMap { project -> NeonProjectSection? in
                 let rawBranches = state.neonWelcomeBranches[project.id] ?? []
                 let filteredBranches = neonSearch.isEmpty
@@ -892,13 +1004,19 @@ struct WelcomeView: View {
         allNeonBranches = rebuiltSections.flatMap(\.branches)
         if allNeonBranches.isEmpty {
             neonSelectedIndex = -1
+            if isFocusedHomeRowNeonBranch {
+                focusedHomeRow = nil
+            }
         } else if neonSelectedIndex >= allNeonBranches.count {
             neonSelectedIndex = allNeonBranches.count - 1
+            if isFocusedHomeRowNeonBranch {
+                focusedHomeRow = .neonBranch(allNeonBranches[neonSelectedIndex].id)
+            }
         }
     }
 
     private func routeTypedCharacterToNeonSearch(_ press: KeyPress) -> KeyPress.Result {
-        guard state.neon.isConfigured else { return .ignored }
+        guard state.hasNeonAPIKeys else { return .ignored }
 
         let blockedModifiers: EventModifiers = [.command, .control, .option]
         guard press.modifiers.intersection(blockedModifiers).isEmpty else { return .ignored }
@@ -909,6 +1027,7 @@ struct WelcomeView: View {
 
         DispatchQueue.main.async {
             neonSelectedIndex = -1
+            focusedHomeRow = nil
             neonSearchFocused = true
             viewFocused = false
             neonSearch.append(typed)
@@ -926,20 +1045,71 @@ struct WelcomeView: View {
             } else {
                 neonSelectedIndex = max(-1, neonSelectedIndex - 1)
             }
+            if neonSelectedIndex >= 0 {
+                focusedHomeRow = .neonBranch(allNeonBranches[neonSelectedIndex].id)
+            } else {
+                focusedHomeRow = nil
+            }
         }
         return .handled
     }
 
+    private func connectFocusedHomeRow() -> KeyPress.Result {
+        if let focusedHomeRow {
+            switch focusedHomeRow {
+            case .saved(let id):
+                if let connection = state.connections.first(where: { $0.id == id }) {
+                    connectSavedConnection(connection)
+                    return .handled
+                }
+            case .neonBranch(let id):
+                if let item = allNeonBranches.first(where: { $0.id == id }) {
+                    connectNeonBranch(project: item.project, branch: item.branch)
+                    return .handled
+                }
+            }
+        }
+
+        return connectHighlightedNeonBranch()
+    }
+
     private func connectHighlightedNeonBranch() -> KeyPress.Result {
         guard let item = highlightedNeonBranch else { return .ignored }
-        Task { await state.connectToNeonBranch(project: item.project, branch: item.branch) }
+        connectNeonBranch(project: item.project, branch: item.branch)
         return .handled
+    }
+
+    private func handleHomeRowFocusChange(_ focus: HomeRowFocus?) {
+        guard let focus else { return }
+
+        switch focus {
+        case .saved:
+            neonSelectedIndex = -1
+        case .neonBranch(let id):
+            guard let index = allNeonBranches.firstIndex(where: { $0.id == id }) else { return }
+            neonSelectedIndex = index
+        }
+    }
+
+    private func connectSavedConnection(_ connection: SavedConnection) {
+        Task { await state.connect(to: connection) }
+    }
+
+    private func connectNeonBranch(project: NeonProjectEntry, branch: NeonBranch) {
+        Task { await state.connectToNeonBranch(project: project, branch: branch) }
     }
 
     private func neonCreatedLabel(for connection: SavedConnection) -> String? {
         guard let projectId = connection.neonProjectId,
               let branchId = connection.neonBranchId,
-              let branch = state.neonWelcomeBranches[projectId]?.first(where: { $0.id == branchId }) else {
+              let project = state.neonWelcomeProjects.first(where: { entry in
+                  guard entry.project.id == projectId else { return false }
+                  if let credentialId = connection.neonCredentialId {
+                      return entry.credential.id == credentialId
+                  }
+                  return true
+              }),
+              let branch = state.neonWelcomeBranches[project.id]?.first(where: { $0.id == branchId }) else {
             return nil
         }
         let created = parsedNeonDate(branch.created_at)
@@ -1005,5 +1175,125 @@ struct StarButtonStyle: ButtonStyle {
             .cornerRadius(4)
             .opacity(configuration.isPressed ? 0.7 : 1.0)
             .onHover { isHovered = $0 }
+    }
+}
+
+private struct SchemaModalView: View {
+    @EnvironmentObject var state: AppState
+    @State private var query: String = ""
+    @FocusState private var searchFocused: Bool
+
+    private func filtered(_ columns: [TableColumn]) -> [TableColumn] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return columns }
+        return columns.filter { col in
+            col.name.localizedCaseInsensitiveContains(q) || col.dataType.localizedCaseInsensitiveContains(q)
+        }
+    }
+
+    var body: some View {
+        Group {
+            if let ref = state.selectedTable, let columns = state.selectedTableColumns {
+                VStack(spacing: 0) {
+                    // Header
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(.caption, weight: .semibold))
+                            .foregroundColor(Theme.textTertiary)
+                        Text("Schema: \(ref.schema).\(ref.table)")
+                            .font(.system(.caption, weight: .semibold))
+                            .foregroundColor(Theme.text)
+                        Spacer()
+                        Button {
+                            state.showSchemaModal = false
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(.caption))
+                                .foregroundColor(Theme.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Theme.surface)
+                    .overlay(Rectangle().fill(Theme.border).frame(height: 1), alignment: .bottom)
+
+                    // Search
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.caption2)
+                            .foregroundColor(Theme.textTertiary)
+                        TextField("Filter columns...", text: $query)
+                            .textFieldStyle(.plain)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(Theme.text)
+                            .focused($searchFocused)
+                        if !query.isEmpty {
+                            Button {
+                                query = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.textTertiary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Theme.surface)
+                    .overlay(Rectangle().fill(Theme.borderSubtle).frame(height: 1), alignment: .bottom)
+
+                    // Content
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(filtered(columns), id: \.id) { col in
+                                HStack(spacing: 10) {
+                                    Text(col.name)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundColor(Theme.text)
+                                        .lineLimit(1)
+                                    Text(col.dataType)
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .foregroundColor(Theme.textTertiary)
+                                        .lineLimit(1)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                Rectangle().fill(Theme.borderSubtle).frame(height: 1)
+                            }
+                            if filtered(columns).isEmpty {
+                                HStack {
+                                    Text("No matching columns")
+                                        .font(.system(.caption2))
+                                        .foregroundColor(Theme.textTertiary)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                            }
+                        }
+                    }
+                    .background(Theme.bg)
+                }
+                .frame(width: 520, height: 420)
+                .background(Theme.surfaceElevated)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Theme.border, lineWidth: 1)
+                )
+                .onAppear {
+                    DispatchQueue.main.async { searchFocused = true }
+                }
+                .onKeyPress(.escape) {
+                    state.showSchemaModal = false
+                    return .handled
+                }
+            } else {
+                EmptyView()
+            }
+        }
     }
 }

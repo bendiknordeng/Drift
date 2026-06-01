@@ -13,6 +13,7 @@ struct SavedConnection: Identifiable, Codable, Hashable {
     var useSSL: Bool
     var neonProjectId: String?
     var neonBranchId: String?
+    var neonCredentialId: UUID? = nil
 
     var displayName: String {
         if !name.isEmpty { return name }
@@ -133,6 +134,25 @@ struct ColumnInfo: Identifiable, Hashable {
 
 // MARK: - Neon
 
+struct NeonAPIKey: Identifiable, Codable, Hashable {
+    var id = UUID()
+    var name: String
+    var key: String
+    var createdAt = Date()
+
+    var displayName: String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+        return "Neon Project"
+    }
+
+    var maskedKey: String {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 8 else { return "••••" }
+        return "•••• \(trimmed.suffix(4))"
+    }
+}
+
 struct NeonOrganization: Identifiable, Codable, Hashable {
     let id: String
     let name: String
@@ -167,6 +187,14 @@ struct NeonRole: Identifiable, Codable, Hashable {
 
 struct NeonConnectionURI: Codable {
     let uri: String
+}
+
+struct NeonProjectEntry: Identifiable, Hashable {
+    let credential: NeonAPIKey
+    let project: NeonProject
+
+    var id: String { "\(credential.id.uuidString)|\(project.id)" }
+    var name: String { project.name }
 }
 
 // MARK: - LLM

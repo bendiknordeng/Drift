@@ -98,9 +98,10 @@ struct CommandPalette: View {
         .shadow(color: .black.opacity(0.5), radius: 30, y: 10)
         .padding(.bottom, 100)
         .onAppear {
-            isFocused = true
             selectedIndex = 0
+            focusInput()
         }
+        .onChange(of: state.commandPaletteFocusRequestID) { _, _ in focusInput() }
         .onChange(of: query) { _, _ in
             selectedIndex = 0
         }
@@ -156,6 +157,19 @@ struct CommandPalette: View {
         let item = results[selectedIndex]
         let ref = TableRef(schema: item.schema, table: item.table)
         state.showCommandPalette = false
-        Task { await state.selectTable(ref) }
+        Task {
+            await state.selectTable(ref)
+            state.requestSidebarFocusActiveTable(centered: true)
+        }
+    }
+
+    private func focusInput() {
+        isFocused = false
+        DispatchQueue.main.async {
+            isFocused = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            isFocused = true
+        }
     }
 }
